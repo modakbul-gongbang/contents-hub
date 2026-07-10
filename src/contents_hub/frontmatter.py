@@ -484,11 +484,17 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     if body.startswith("\n"):
         body = body[1:]
 
-    # Try PyYAML
+    # Try PyYAML; fall back to the simple parser when it is unavailable,
+    # the block is invalid YAML, or it parses to a non-mapping scalar.
     try:
         import yaml
+    except ImportError:
+        return _parse_simple(fm_text), body
+    try:
         fm = yaml.safe_load(fm_text) or {}
-    except Exception:
+    except yaml.YAMLError:
+        fm = _parse_simple(fm_text)
+    if not isinstance(fm, dict):
         fm = _parse_simple(fm_text)
 
     return fm, body

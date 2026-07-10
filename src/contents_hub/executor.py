@@ -229,6 +229,24 @@ def _recipe_proxy(sub: Any) -> Any:
     )
 
 
+def _sub_fields(sub: Any) -> tuple[str, str, dict[str, Any]]:
+    """Normalize a subscription-like object into (url, source_type, config).
+
+    A missing/non-dict config is coerced to an empty dict and written back
+    onto ``sub`` when possible so downstream mutations stay visible.
+    """
+    sub_url = getattr(sub, "url", "") or ""
+    source_type = getattr(sub, "source_type", "") or "webpage"
+    config = getattr(sub, "config", None)
+    if not isinstance(config, dict):
+        config = {}
+        try:
+            setattr(sub, "config", config)
+        except Exception:
+            pass
+    return sub_url, source_type, config
+
+
 def _record_failure(
     sub_url: str,
     config: dict[str, Any],
@@ -1749,15 +1767,7 @@ async def content_items(
     runner: AgentRunner | None = None,
 ) -> FetchResult:
     """Run only CONTENT_STRATEGY + METADATA for already-diffed candidates."""
-    sub_url = getattr(sub, "url", "") or ""
-    source_type = getattr(sub, "source_type", "") or "webpage"
-    config = getattr(sub, "config", None)
-    if not isinstance(config, dict):
-        config = {}
-        try:
-            setattr(sub, "config", config)
-        except Exception:
-            pass
+    sub_url, source_type, config = _sub_fields(sub)
 
     proxy = _recipe_proxy(sub)
     recipe_meta = RecipeRegistry.get_recipe_metadata(proxy)
@@ -2048,15 +2058,7 @@ async def execute(
     ``tools.set_default_registry()`` (or by passing ``tool_registry=`` to
     a custom ``ClaudeSDKRunner`` and injecting that as ``runner=``).
     """
-    sub_url = getattr(sub, "url", "") or ""
-    source_type = getattr(sub, "source_type", "") or "webpage"
-    config = getattr(sub, "config", None)
-    if not isinstance(config, dict):
-        config = {}
-        try:
-            setattr(sub, "config", config)
-        except Exception:
-            pass
+    sub_url, source_type, config = _sub_fields(sub)
 
     proxy = _recipe_proxy(sub)
     recipe_meta = RecipeRegistry.get_recipe_metadata(proxy)

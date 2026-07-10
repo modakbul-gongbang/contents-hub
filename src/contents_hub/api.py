@@ -913,6 +913,13 @@ async def collect_all_active(
 # ---------------------------------------------------------------------------
 
 
+_SUBSCRIPTION_COLUMNS = """id, url, title, source_type, status,
+                      schedule_cron, schedule_interval_minutes,
+                      default_lens_ids, config,
+                      last_fetched_at, last_error, consecutive_errors,
+                      created_at, updated_at"""
+
+
 def _query_due_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Return active subscriptions whose next fetch is due.
 
@@ -923,11 +930,7 @@ def _query_due_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     now_str = now_iso()
     return list(
         conn.execute(
-            """SELECT id, url, title, source_type, status,
-                      schedule_cron, schedule_interval_minutes,
-                      default_lens_ids, config,
-                      last_fetched_at, last_error, consecutive_errors,
-                      created_at, updated_at
+            f"""SELECT {_SUBSCRIPTION_COLUMNS}
                FROM subscriptions
                WHERE status = 'active'
                  AND schedule_interval_minutes > 0
@@ -948,11 +951,7 @@ def _query_active_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Return all active subscriptions regardless of due schedule."""
     return list(
         conn.execute(
-            """SELECT id, url, title, source_type, status,
-                      schedule_cron, schedule_interval_minutes,
-                      default_lens_ids, config,
-                      last_fetched_at, last_error, consecutive_errors,
-                      created_at, updated_at
+            f"""SELECT {_SUBSCRIPTION_COLUMNS}
                FROM subscriptions
                WHERE status = 'active'
                ORDER BY id ASC"""
@@ -964,11 +963,7 @@ def _query_fetch_all_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Return subscriptions eligible for a manual force fetch."""
     return list(
         conn.execute(
-            """SELECT id, url, title, source_type, status,
-                      schedule_cron, schedule_interval_minutes,
-                      default_lens_ids, config,
-                      last_fetched_at, last_error, consecutive_errors,
-                      created_at, updated_at
+            f"""SELECT {_SUBSCRIPTION_COLUMNS}
                FROM subscriptions
                WHERE status IN ('active', 'error')
                ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, id ASC"""
