@@ -105,7 +105,7 @@ def test_launch_docs_keep_first_success_and_followups_clear():
     assert "Manual URL/text is the shortest first-launch path" in quickstart
     assert "automatic `manual-inbox`" in launch
     assert "does not ship built-in Telegram, Slack, or Discord bot packages" in channels
-    assert "ok`, `count`, and `items`" in channels
+    assert "ok`, `count`, `items`, `groups`, and `delivery_instruction`" in channels
     assert "raw_item` and `digest` are the only" in channels
     assert "openclaw skills install ./skills/contents-hub --as contents-hub --global" in install
     assert "OpenClaw Git installs expect `SKILL.md` at repo root" in skill
