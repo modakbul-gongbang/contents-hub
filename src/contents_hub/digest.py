@@ -321,13 +321,20 @@ def _fallback_group_narrative(
     lens_name: str,
     lens_description: str,
     candidates: list[LensInboxCandidate],
+    reason: str = "timeout",
 ) -> str:
     focus = lens_description.strip() or lens_name
+    reason_text = (
+        "에이전트 러너가 설정되지 않아(CONTENTS_HUB_AGENT_RUNNER=none), "
+        "원문 제목과 렌즈 요약을 근거 중심으로 제공합니다."
+        if reason == "no_runner"
+        else "모델 합성이 제한 시간 안에 끝나지 않아, 원문 제목과 렌즈 요약을 근거 중심으로 제공합니다."
+    )
     lines = [
         f"{lens_name} 관련 핵심 흐름",
         "",
         f"{focus} 관점에서 이번 묶음은 {len(candidates)}건의 원문을 우선 보존해 정리했습니다. "
-        "모델 합성이 제한 시간 안에 끝나지 않아, 원문 제목과 렌즈 요약을 근거 중심으로 제공합니다.",
+        + reason_text,
         "",
     ]
     for cand in candidates[:8]:
@@ -350,13 +357,19 @@ def _fallback_executive_summary(
     *,
     sections: list[DigestSection],
     item_count: int,
+    reason: str = "timeout",
 ) -> str:
     topic_count = len(sections)
     names = ", ".join(sec.lens_name for sec in sections[:4])
+    reason_text = (
+        "에이전트 러너가 설정되지 않아(CONTENTS_HUB_AGENT_RUNNER=none) "
+        if reason == "no_runner"
+        else "일부 합성 호출이 제한 시간 안에 끝나지 않아 "
+    )
     return (
         "📌 오늘의 핵심\n\n"
         f"총 {topic_count}가지 주제와 {item_count}건의 아이템을 정리했습니다. "
-        f"이번 묶음은 {names}를 중심으로 들어왔고, 일부 합성 호출이 제한 시간 안에 끝나지 않아 "
+        f"이번 묶음은 {names}를 중심으로 들어왔고, {reason_text}"
         "각 섹션의 원문 근거와 렌즈 요약을 우선 보존했습니다."
     )
 
@@ -589,6 +602,7 @@ async def build_digest(config: WikiConfig, conn: sqlite3.Connection) -> Digest:
                     lens_name=display_name,
                     lens_description=lens_description,
                     candidates=chunk,
+                    reason="no_runner",
                 )
             prompt = _prompt_for(chunk)
             try:
@@ -647,6 +661,7 @@ async def build_digest(config: WikiConfig, conn: sqlite3.Connection) -> Digest:
             executive_summary = _fallback_executive_summary(
                 sections=sections,
                 item_count=len({c.id for c in candidates}),
+                reason="no_runner",
             )
         else:
             executive_summary = (

@@ -21,7 +21,7 @@ import hashlib
 import logging
 import math
 import os
-from array import array
+import struct
 from typing import Protocol
 
 logger = logging.getLogger(__name__)
@@ -114,13 +114,13 @@ def text_hash(text: str) -> str:
 
 
 def pack_vector(vector: list[float]) -> bytes:
-    return array("f", vector).tobytes()
+    """Explicit little-endian float32, so vaults stay portable across hosts."""
+    return struct.pack(f"<{len(vector)}f", *vector)
 
 
 def unpack_vector(blob: bytes) -> list[float]:
-    values = array("f")
-    values.frombytes(blob)
-    return list(values)
+    count = len(blob) // 4
+    return list(struct.unpack(f"<{count}f", blob[: count * 4]))
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

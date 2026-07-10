@@ -106,6 +106,35 @@ def _ensure_default_manual_lens(conn: sqlite3.Connection, *, now: str) -> None:
     )
 
 
+def _matching_enabled_lens_ids(conn: sqlite3.Connection, row: sqlite3.Row) -> list[str]:
+    """Enabled Lenses (except manual-inbox) whose keywords match the item text."""
+    haystack = "\n".join(
+        (
+            str(row["title"] or ""),
+            str(row["content_summary"] or ""),
+            str(row["body"] or ""),
+        )
+    ).lower()
+    matched: list[str] = []
+    for lens_row in conn.execute(
+        "SELECT id, keywords FROM lenses WHERE enabled = 1 AND id != ? ORDER BY id",
+        (DEFAULT_MANUAL_LENS_ID,),
+    ).fetchall():
+        try:
+            keywords = json.loads(lens_row["keywords"] or "[]")
+        except json.JSONDecodeError:
+            keywords = []
+        if not isinstance(keywords, list):
+            keywords = []
+        if any(
+            str(keyword).strip().lower() in haystack
+            for keyword in keywords
+            if str(keyword).strip()
+        ):
+            matched.append(lens_row["id"])
+    return matched
+
+
 def _row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
     metadata = _loads_object(row["metadata_json"] or "{}")
     return {
@@ -279,18 +308,9 @@ def add_manual_raw_item(
 
     with get_db(config) as conn:
         if use_default_enabled_lenses:
-            requested_lens_ids = [
-                row["id"]
-                for row in conn.execute(
-                    """SELECT id FROM lenses
-                       WHERE enabled = 1 AND id != ?
-                       ORDER BY id""",
-                    (DEFAULT_MANUAL_LENS_ID,),
-                ).fetchall()
-            ]
-            if not requested_lens_ids:
-                _ensure_default_manual_lens(conn, now=now)
-                requested_lens_ids = [DEFAULT_MANUAL_LENS_ID]
+            # Resolved after the row (and any URL enrichment) exists, so the
+            # keyword match sees the fetched title/body — see below.
+            requested_lens_ids = []
         else:
             found = {
                 row["id"]
@@ -374,6 +394,13 @@ def add_manual_raw_item(
         content_summary = content_summary.strip() or str(row["content_summary"] or "")
 
         raw_item_id = int(row["id"])
+        if use_default_enabled_lenses:
+            # Attach only Lenses whose keywords actually match the item so a
+            # climbing note never lands in an AI lens. No match → manual-inbox.
+            requested_lens_ids = _matching_enabled_lens_ids(conn, row)
+            if not requested_lens_ids:
+                _ensure_default_manual_lens(conn, now=now)
+                requested_lens_ids = [DEFAULT_MANUAL_LENS_ID]
         for lens_id in requested_lens_ids:
             conn.execute(
                 """INSERT OR IGNORE INTO raw_item_lenses

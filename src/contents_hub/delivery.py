@@ -96,6 +96,7 @@ def _digest_card(row) -> dict[str, Any]:
         "raw_item_id": None,
         "digest_id": int(row["id"]),
         "delivery_key": f"digest:{row['id']}",
+        "dedupe_key": f"digest:{row['id']}",
         "title": row["title"] or f"Digest #{row['id']}",
         "item_count": int(row["item_count"] or 0),
         "created_at": row["created_at"],
@@ -104,6 +105,7 @@ def _digest_card(row) -> dict[str, Any]:
         # Full generated digest — adapters send this verbatim, never a re-summary.
         "content_md": content_md,
         "markdown": content_md,
+        "plain_text": content_md,
         "sections": sections,
     }
 

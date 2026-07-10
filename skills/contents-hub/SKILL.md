@@ -244,9 +244,10 @@ contents-hub raw add https://example.com/article --lens-id ai-research
 ```
 
 `raw add` writes a manual `raw_items` row. URL input is canonicalized for
-dedupe; text input uses a stable content key. When `--lens-id` is omitted, the
-item attaches to enabled automatic Lenses. If none exist, contents-hub creates
-and attaches `manual-inbox`.
+dedupe; text input uses a stable content key. When `--lens-id` is omitted,
+the item attaches only to enabled Lenses whose keywords match the item's
+title/summary/body (so a climbing note never lands in an AI lens). When no
+Lens matches, contents-hub creates and attaches `manual-inbox`.
 
 ## Lens Management
 
@@ -338,7 +339,9 @@ contains the Lens-generated output; digest cards carry the full digest in
 `content_md`. Send that content to Telegram/Slack/Discord exactly as-is.
 Never summarize, rewrite, shorten, merge, or reorder cards — re-summarizing
 destroys the Lens layer. Deliver one Lens group at a time (iterate
-`groups`) so each topic stays separated in the channel.
+`groups`) so each topic stays separated in the channel, and dedupe sends by
+`delivery_key` — a multi-lens item appears in every matching group but must
+be sent only once.
 
 contents-hub decides which cards are deliverable. Use `--origin subscription`,
 `--lens-matched`, and `--first-seen-only` instead of writing runtime SQLite

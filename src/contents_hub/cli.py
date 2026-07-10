@@ -343,6 +343,12 @@ def _build_query_parser(sub_parsers) -> None:
     query_p.add_argument("--since", default=None, help="Recency window, e.g. 90d, 4w, 12h")
     query_p.add_argument("--lens", default=None, help="Only items matched to this Lens id")
     query_p.add_argument("--saved-only", action="store_true", help="Only saved items")
+    query_p.add_argument(
+        "--min-engagement",
+        type=float,
+        default=None,
+        help="Only items whose decayed engagement score is at least this value",
+    )
     query_p.add_argument("--explain", action="store_true", help="Include per-ranker score contributions")
     query_p.add_argument(
         "--context",
@@ -1580,6 +1586,7 @@ def _handle_query(config, args) -> int:
             since=getattr(args, "since", None),
             lens=getattr(args, "lens", None),
             saved_only=bool(getattr(args, "saved_only", False)),
+            min_engagement=getattr(args, "min_engagement", None),
             explain=bool(getattr(args, "explain", False)),
         )
     except Exception as exc:  # noqa: BLE001 - CLI failure surface

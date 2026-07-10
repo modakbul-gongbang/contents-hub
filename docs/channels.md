@@ -43,7 +43,10 @@ The payload repeats this rule in `delivery_instruction`.
 `groups` lists cards per Lens (`lens_id`, `name`, `raw_item_ids`, `count`;
 unlensed items group under `lens_id: ""`). Adapters that deliver one topic
 per message or per thread should iterate `groups` instead of interleaving
-lenses.
+lenses. An item matched to several Lenses appears in each of those groups —
+adapters that iterate `groups` must dedupe sends by `delivery_key` (send the
+card in its first group only) so the user never receives the same card
+twice.
 
 contents-hub decides which cards are deliverable. Core candidate selection
 handles outbound-message exclusion, raw item origin filters, Lens-matched

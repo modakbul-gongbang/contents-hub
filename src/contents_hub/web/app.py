@@ -660,7 +660,9 @@ def create_app(config: WikiConfig) -> FastAPI:
                 "SELECT url FROM raw_items WHERE id = ?", (item_id,)
             ).fetchone()
             url = (row["url"] if row else "") or ""
-            if not url or url.startswith("content://"):
+            # http(s) only — feeds control raw_items.url, so never emit a
+            # Location header with javascript:/data:/other schemes.
+            if not url.startswith(("http://", "https://")):
                 raise HTTPException(status_code=404, detail="Raw item has no external URL")
             stamp = now_iso()
             record_signal_conn(

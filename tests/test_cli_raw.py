@@ -73,24 +73,30 @@ def test_raw_add_url_inserts_manual_item_and_dedupes_tracking_params(monkeypatch
         assert row["subscription_id"] is None
 
 
-def test_raw_add_without_lens_attaches_enabled_lenses_without_manual_inbox(monkeypatch, tmp_path, capsys):
+def test_raw_add_without_lens_attaches_only_keyword_matching_lenses(monkeypatch, tmp_path, capsys):
+    """Manual adds route to Lenses whose keywords match — never to every
+    enabled Lens (that cross-pollutes per-lens digests and delivery groups)."""
     cfg = WikiConfig(vault_path=tmp_path)
     init_db(cfg).close()
     with get_db(cfg) as conn:
         conn.execute(
             """INSERT INTO lenses
                (id, name, description, keywords, enabled, created_at, updated_at)
-               VALUES ('ai-trends', 'AI Trends', '', '[]', 1, 'now', 'now')"""
+               VALUES ('ai-trends', 'AI Trends', '', '["agent", "llm"]', 1, 'now', 'now')"""
         )
         conn.execute(
             """INSERT INTO lenses
                (id, name, description, keywords, enabled, created_at, updated_at)
-               VALUES ('agentic-workflow-updates', 'Agentic Workflow', '', '[]', 1, 'now', 'now')"""
+               VALUES ('climbing', 'Climbing', '', '["hangboard", "crimp"]', 1, 'now', 'now')"""
         )
         conn.commit()
     monkeypatch.setattr(
         "contents_hub.raw_items.enrich_url",
-        lambda url: ({"title": "T", "body": "Digest body", "content_summary": "S"}, [], "static"),
+        lambda url: (
+            {"title": "Agent digest", "body": "New LLM agent workflow ideas", "content_summary": "S"},
+            [],
+            "static",
+        ),
     )
 
     rc = main([
@@ -106,7 +112,8 @@ def test_raw_add_without_lens_attaches_enabled_lenses_without_manual_inbox(monke
 
     assert rc == 0
     assert payload["ok"] is True
-    assert payload["lens_ids"] == ["agentic-workflow-updates", "ai-trends"]
+    # Enrichment happened before routing, and only the matching lens attached.
+    assert payload["lens_ids"] == ["ai-trends"]
     with get_db(cfg) as conn:
         assert conn.execute("SELECT COUNT(*) FROM lenses WHERE id = 'manual-inbox'").fetchone()[0] == 0
         attached = conn.execute(
@@ -114,7 +121,6 @@ def test_raw_add_without_lens_attaches_enabled_lenses_without_manual_inbox(monke
             (payload["item"]["id"],),
         ).fetchall()
         assert [dict(row) for row in attached] == [
-            {"lens_id": "agentic-workflow-updates", "summary": "Digest me tomorrow"},
             {"lens_id": "ai-trends", "summary": "Digest me tomorrow"},
         ]
         view = query_lens_inbox(
@@ -125,6 +131,32 @@ def test_raw_add_without_lens_attaches_enabled_lenses_without_manual_inbox(monke
         )
         assert view["candidate_count"] == 1
         assert view["candidates"][0].id == payload["item"]["id"]
+
+
+def test_raw_add_without_matching_lens_falls_back_to_manual_inbox(tmp_path, capsys):
+    cfg = WikiConfig(vault_path=tmp_path)
+    init_db(cfg).close()
+    with get_db(cfg) as conn:
+        conn.execute(
+            """INSERT INTO lenses
+               (id, name, description, keywords, enabled, created_at, updated_at)
+               VALUES ('ai-trends', 'AI Trends', '', '["agent", "llm"]', 1, 'now', 'now')"""
+        )
+        conn.commit()
+
+    rc = main([
+        "--vault",
+        str(tmp_path),
+        "raw",
+        "add",
+        "Hangboard training note: half-crimp repeaters",
+        "--title",
+        "Hangboard note",
+    ])
+    payload = _read_json(capsys)
+
+    assert rc == 0
+    assert payload["lens_ids"] == ["manual-inbox"]
 
 
 def test_raw_add_without_any_lens_creates_manual_inbox(tmp_path, capsys):

@@ -47,8 +47,10 @@ _VARIATION_SELECTOR = "️"
 
 
 def _normalize_reaction(value: str) -> str:
-    """Normalize a reaction value: strip :colons:, map names, drop U+FE0F."""
+    """Normalize a reaction value: strip :colons: and Slack ``::skin-tone-N``
+    suffixes, map names, drop U+FE0F."""
     token = str(value or "").strip().strip(":")
+    token = token.split("::", 1)[0]
     token = REACTION_NAME_ALIASES.get(token.lower(), token)
     return token.replace(_VARIATION_SELECTOR, "")
 
@@ -184,14 +186,15 @@ def record_outbound_message(
             ),
         )
         if raw_item_id is not None:
-            # Exposure signal for the engagement ledger; the outbound key
-            # makes re-recording the same message replay-safe.
+            # Exposure signal for the engagement ledger; the platform-scoped
+            # outbound key makes re-recording the same message replay-safe
+            # without colliding across platforms whose ids overlap.
             record_signal_conn(
                 conn,
                 raw_item_id=int(raw_item_id),
                 signal="impression",
                 source=platform,
-                dedup_key=f"om:{workspace_id}:{channel_id}:{thread_id}:{message_id}",
+                dedup_key=f"om:{platform}:{workspace_id}:{channel_id}:{thread_id}:{message_id}",
             )
         row = conn.execute(
             """
@@ -343,6 +346,10 @@ def _save_and_promote_action(
     if row is None:
         return {"ok": False, "status": "not_found", "error": "raw_item_not_found"}
     _saved_insert(conn, raw_item_id)
+    # Known limitation: promote_raw_item commits on its own connection, so a
+    # crash between the mid-action commit below and the caller's final commit
+    # can leave a promoted note whose event row stays 'received'. The event-id
+    # replay guard then blocks re-running it; recover via `item signal`.
     if row["status"] == "promoted":
         path = _promoted_path(config, conn, raw_item_id)
         return {
@@ -447,10 +454,14 @@ def _record_action_signals(
 ) -> None:
     """Mirror a handled interaction into the engagement signal ledger.
 
-    The dedup key reuses the platform event id when present, otherwise the
-    message+reaction pair, so replays never double-count.
+    The dedup key is platform:message:user:reaction — deliberately NOT the
+    platform event id, so removing and re-adding the same reaction (which
+    mints a fresh event id every time) cannot inflate engagement, and two
+    users reacting to the same message count separately.
     """
-    dedup_base = event.event_id or f"{event.message_id}:{event.value}"
+    dedup_base = (
+        f"{event.platform}:{event.message_id}:{event.user_id}:{event.value}"
+    )
     signals = list(_ACTION_SIGNALS.get(action, ()))
     if promoted:
         signals.append("promote")
