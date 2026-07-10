@@ -705,6 +705,86 @@ def _migrate_existing_telegram_mappings(conn: sqlite3.Connection) -> None:
     )
 
 
+# Migration ladder: (target_version, script, tolerate_duplicate_column, label).
+# tolerate_duplicate_column covers re-runs of ALTER TABLE ... ADD COLUMN
+# scripts against a DB that already has the column (partial upgrades).
+_MIGRATIONS: tuple[tuple[int, str, bool, str], ...] = (
+    (2, _MIGRATION_V2_SQL, False, "fetch_cursors"),
+    (3, _MIGRATION_V3_SQL, False, "collected_tweets"),
+    (4, _MIGRATION_V4_SQL, False,
+     "subscriptions, raw_items, lenses, raw_item_lenses, job_runs"),
+    (5, _MIGRATION_V5_SQL, True, "schedules.running"),
+    (6, _MIGRATION_V6_SQL, False,
+     "raw_items.body, raw_items.published_at, UNIQUE(sub_id, url)"),
+    (7, _MIGRATION_V7_SQL, True,
+     "raw_item_lenses.summary, raw_item_lenses.bullets_json"),
+    (8, _MIGRATION_V8_SQL, True,
+     "digests table, raw_items.digest_id, idx_raw_items_digest"),
+    (9, _MIGRATION_V9_SQL, False, "exploration lifecycle tables"),
+    (10, _MIGRATION_V10_SQL, False, "raw item discovery attribution"),
+    (11, _MIGRATION_V11_SQL, True, "raw item metadata JSON"),
+    (12, _MIGRATION_V12_SQL, True, "raw_item_lenses.enriched_json"),
+    (13, _MIGRATION_V13_SQL, False,
+     "digest section items, saved items, digest titles"),
+    (14, _MIGRATION_V14_SQL, False, "outbound messages and interaction events"),
+)
+
+# Indexes over migration-added columns; created after the ladder so they
+# tolerate missing columns during partial upgrades.
+_POST_MIGRATION_INDEX_SQL: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_raw_items_published "
+    "ON raw_items(published_at)",
+    "CREATE INDEX IF NOT EXISTS idx_raw_items_digest "
+    "ON raw_items(digest_id)",
+    "CREATE INDEX IF NOT EXISTS idx_digests_created_at "
+    "ON digests(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_digest_section_items_raw_item "
+    "ON digest_section_items(raw_item_id)",
+    "CREATE INDEX IF NOT EXISTS idx_saved_items_saved_at "
+    "ON saved_items(saved_at)",
+    "CREATE INDEX IF NOT EXISTS idx_outbound_messages_lookup "
+    "ON outbound_messages(platform, workspace_id, channel_id, thread_id, message_id)",
+    "CREATE INDEX IF NOT EXISTS idx_outbound_messages_raw_item "
+    "ON outbound_messages(raw_item_id)",
+    "CREATE INDEX IF NOT EXISTS idx_outbound_messages_digest "
+    "ON outbound_messages(digest_id)",
+    "CREATE INDEX IF NOT EXISTS idx_interaction_events_message "
+    "ON interaction_events(platform, workspace_id, channel_id, message_id)",
+    "CREATE INDEX IF NOT EXISTS idx_interaction_events_created_at "
+    "ON interaction_events(created_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_interaction_events_event_id "
+    "ON interaction_events(platform, event_id) WHERE event_id != ''",
+)
+
+
+def _run_migrations(conn: sqlite3.Connection, current_version: int) -> int:
+    """Apply every pending migration and return the resulting version."""
+    for version, sql, tolerate_dup, label in _MIGRATIONS:
+        if current_version >= version:
+            continue
+        if version == 13:
+            # v13 pre-step: digests.title predates the script and may
+            # already exist on partially upgraded DBs.
+            try:
+                conn.execute(
+                    "ALTER TABLE digests "
+                    "ADD COLUMN title TEXT NOT NULL DEFAULT ''"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+        try:
+            conn.executescript(sql)
+        except sqlite3.OperationalError as e:
+            if not (tolerate_dup and "duplicate column name" in str(e).lower()):
+                raise
+        if version == 14:
+            _migrate_existing_telegram_mappings(conn)
+        current_version = version
+        logger.info("Migrated database to v%d (%s)", version, label)
+    return current_version
+
+
 def init_db(config: WikiConfig) -> sqlite3.Connection:
     """Open (or create) the SQLite database and apply schema.
 
@@ -732,111 +812,7 @@ def init_db(config: WikiConfig) -> sqlite3.Connection:
         )
         conn.commit()
     else:
-        current_version = row["version"]
-        if current_version < 2:
-            conn.executescript(_MIGRATION_V2_SQL)
-            current_version = 2
-            logger.info("Migrated database to v2 (fetch_cursors)")
-        if current_version < 3:
-            conn.executescript(_MIGRATION_V3_SQL)
-            current_version = 3
-            logger.info("Migrated database to v3 (collected_tweets)")
-        if current_version < 4:
-            conn.executescript(_MIGRATION_V4_SQL)
-            current_version = 4
-            logger.info(
-                "Migrated database to v4 "
-                "(subscriptions, raw_items, lenses, raw_item_lenses, job_runs)"
-            )
-        if current_version < 5:
-            try:
-                conn.executescript(_MIGRATION_V5_SQL)
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-            current_version = 5
-            logger.info("Migrated database to v5 (schedules.running)")
-        if current_version < 6:
-            conn.executescript(_MIGRATION_V6_SQL)
-            current_version = 6
-            logger.info(
-                "Migrated database to v6 "
-                "(raw_items.body, raw_items.published_at, UNIQUE(sub_id, url))"
-            )
-        if current_version < 7:
-            try:
-                conn.executescript(_MIGRATION_V7_SQL)
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-            current_version = 7
-            logger.info(
-                "Migrated database to v7 "
-                "(raw_item_lenses.summary, raw_item_lenses.bullets_json)"
-            )
-        if current_version < 8:
-            try:
-                conn.executescript(_MIGRATION_V8_SQL)
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-            current_version = 8
-            logger.info(
-                "Migrated database to v8 "
-                "(digests table, raw_items.digest_id, idx_raw_items_digest)"
-            )
-        if current_version < 9:
-            conn.executescript(_MIGRATION_V9_SQL)
-            current_version = 9
-            logger.info("Migrated database to v9 (exploration lifecycle tables)")
-        if current_version < 10:
-            conn.executescript(_MIGRATION_V10_SQL)
-            current_version = 10
-            logger.info(
-                "Migrated database to v10 (raw item discovery attribution)"
-            )
-        if current_version < 11:
-            try:
-                conn.executescript(_MIGRATION_V11_SQL)
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-            current_version = 11
-            logger.info("Migrated database to v11 (raw item metadata JSON)")
-        if current_version < 12:
-            try:
-                conn.executescript(_MIGRATION_V12_SQL)
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-            current_version = 12
-            logger.info(
-                "Migrated database to v12 "
-                "(raw_item_lenses.enriched_json)"
-            )
-        if current_version < 13:
-            try:
-                conn.execute(
-                    "ALTER TABLE digests "
-                    "ADD COLUMN title TEXT NOT NULL DEFAULT ''"
-                )
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-            conn.executescript(_MIGRATION_V13_SQL)
-            current_version = 13
-            logger.info(
-                "Migrated database to v13 "
-                "(digest section items, saved items, digest titles)"
-            )
-        if current_version < 14:
-            conn.executescript(_MIGRATION_V14_SQL)
-            _migrate_existing_telegram_mappings(conn)
-            current_version = 14
-            logger.info(
-                "Migrated database to v14 "
-                "(outbound messages and interaction events)"
-            )
+        current_version = _run_migrations(conn, row["version"])
         if current_version != row["version"]:
             conn.execute(
                 "UPDATE schema_version SET version = ?",
@@ -844,56 +820,7 @@ def init_db(config: WikiConfig) -> sqlite3.Connection:
             )
             conn.commit()
 
-    # Post-migration indexes (tolerate missing columns during partial upgrades).
-    try:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_raw_items_published "
-            "ON raw_items(published_at)"
-        )
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_raw_items_digest "
-            "ON raw_items(digest_id)"
-        )
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_digests_created_at "
-            "ON digests(created_at)"
-        )
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_digest_section_items_raw_item "
-            "ON digest_section_items(raw_item_id)"
-        )
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_saved_items_saved_at "
-            "ON saved_items(saved_at)"
-        )
-    except sqlite3.OperationalError:
-        pass
-    for sql in (
-        "CREATE INDEX IF NOT EXISTS idx_outbound_messages_lookup "
-        "ON outbound_messages(platform, workspace_id, channel_id, thread_id, message_id)",
-        "CREATE INDEX IF NOT EXISTS idx_outbound_messages_raw_item "
-        "ON outbound_messages(raw_item_id)",
-        "CREATE INDEX IF NOT EXISTS idx_outbound_messages_digest "
-        "ON outbound_messages(digest_id)",
-        "CREATE INDEX IF NOT EXISTS idx_interaction_events_message "
-        "ON interaction_events(platform, workspace_id, channel_id, message_id)",
-        "CREATE INDEX IF NOT EXISTS idx_interaction_events_created_at "
-        "ON interaction_events(created_at)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_interaction_events_event_id "
-        "ON interaction_events(platform, event_id) WHERE event_id != ''",
-    ):
+    for sql in _POST_MIGRATION_INDEX_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:
