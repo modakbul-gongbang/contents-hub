@@ -80,6 +80,10 @@ flowchart LR
     I --> J[interaction handle]
     J --> K[Markdown source note]
     K --> L[Vault / sources]
+    I --> M[(item_signals ledger)]
+    F --> M
+    M --> N[query: keyword + semantic + engagement ranking]
+    N --> G
 ```
 
 The runtime decides **when** to run and **where** to send messages. contents-hub
@@ -190,8 +194,47 @@ Default reactions:
 | `✅` | Mark read |
 | `🗑` | Archive |
 
+Slack sends reaction *names* instead of emoji — `star`, `+1`,
+`white_check_mark`, `wastebasket` (including `::skin-tone-N` variants)
+resolve through the same rules, so pass Slack's `event.reaction` straight
+through as `value`. Unicode skin-tone emoji from Discord/Telegram also
+normalize to the base emoji.
+
 This is the contract Hermes, OpenClaw, Slack, Discord, Telegram, or any custom
 adapter can implement.
+
+## Personal Knowledge Store
+
+Every delivered card, link click, ✅/⭐/🗑 reaction, and promotion also lands
+in an append-only engagement ledger (`item_signals`), so the vault knows
+which items you actually cared about — delivered < opened < read < saved <
+promoted, with archive as a negative signal, all decaying over time.
+
+`contents-hub query` turns that into ranked personal search any agent can
+call:
+
+```bash
+contents-hub --vault ~/contents-vault query "vector databases" --limit 10 --format json
+contents-hub --vault ~/contents-vault query "vector databases" --since 90d --lens ai --saved-only
+contents-hub --vault ~/contents-vault query "vector databases" --context   # markdown context pack
+contents-hub --vault ~/contents-vault item open 42                          # record a click + launch
+contents-hub --vault ~/contents-vault item signals 42                       # ledger + engagement score
+```
+
+Keyword search uses SQLite FTS5 (stemmed, zero extra dependencies). Add an
+optional semantic ranker with any OpenAI-compatible embedding endpoint —
+including local Ollama — and nothing leaves your machine unless you opt in:
+
+```bash
+CONTENTS_HUB_EMBEDDINGS=openai-compat \
+CONTENTS_HUB_EMBEDDINGS_URL=http://localhost:11434/v1 \
+CONTENTS_HUB_EMBEDDINGS_MODEL=nomic-embed-text \
+contents-hub --vault ~/contents-vault index --backfill
+```
+
+Ranking fuses keyword rank, semantic similarity, the time-decayed
+engagement score, and recency; weights are tunable in the `query:` block of
+`.contents-hub.yaml`. Design notes: [Knowledge Store Plan](docs/knowledge-store-plan.md).
 
 ## Runtime Integrations
 
@@ -201,7 +244,7 @@ adapter can implement.
 | Hermes | Documented | Profile-aware setup, cron topology, and Telegram-style adapter flow. |
 | OpenClaw | Documented | Skill install and task/gateway setup runbook. |
 | Codex / Claude Code loops | Compatible | Use the CLI and skill; let the runtime own scheduling. |
-| Slack / Discord packaged bots | TODO | Channel contract is ready; packaged adapters are a follow-up. |
+| Slack / Discord packaged bots | Contract ready | Adapter walkthrough and reaction-name mapping documented in [Channels](docs/channels.md); packaged bots are a follow-up. |
 
 Runtime docs:
 
@@ -222,6 +265,7 @@ Runtime docs:
 | Digest | A briefing generated from Lens-routed raw items. |
 | Delivery mapping | Platform message id recorded for later reaction handling. |
 | Interaction | A normalized channel event such as a reaction. |
+| Engagement signal | One ledger row per layer of interest (impression/open/read/save/promote; archive negative); powers `query` ranking. |
 | Source note | Immutable processed summary Markdown document under `sources/`; it does not dump full raw page text or transcripts. |
 
 ## CLI Cheatsheet
@@ -239,9 +283,12 @@ contents-hub lens create|list|update|delete
 contents-hub explore
 contents-hub exploration add|list|run|run-all|delete
 contents-hub browser open|status|kill
-contents-hub deliver pending
+contents-hub deliver pending|prepare
 contents-hub delivery record|list
 contents-hub interaction handle|rules list
+contents-hub item open|signal|signals
+contents-hub query
+contents-hub index
 contents-hub web
 ```
 
@@ -266,7 +313,10 @@ Reliable today:
 - RSS feeds with user-created Lenses
 - YouTube/page metadata collection where available
 - SQLite-backed digests and dashboard
-- Delivery mappings and normalized reaction handling
+- Delivery mappings and normalized reaction handling (emoji and Slack
+  reaction names)
+- Lens-grouped verbatim delivery cards
+- Engagement signal ledger and `query` knowledge-store search
 - Markdown source promotion
 - Hermes/OpenClaw setup documentation
 
@@ -274,6 +324,7 @@ Experimental or adapter-dependent:
 
 - Login-required browser-backed social sources
 - Exploration recipes
+- Semantic query ranking (requires an embedding endpoint)
 - Packaged Slack/Discord/Telegram bot adapters
 - MCP bridge and additional agent runners
 

@@ -51,7 +51,9 @@ Single test:
 
 - `init [path]` - scaffold a vault
 - `sub {add,remove,list}` - subscription CRUD
-- `raw add <url_or_text>` - manual read-later queue insertion
+- `raw add <url_or_text>` - manual read-later queue insertion; without
+  `--lens-id` it attaches only Lenses whose keywords match the item text,
+  falling back to `manual-inbox`
 - `fetch <id_or_url>` - fetch one subscription
 - `fetch-all` - fetch every active or error subscription
 - `tick` - collect due subscriptions
@@ -131,8 +133,13 @@ SQLite lives at `<vault>/.contents-hub/state.db`. Schema is inline in
 columns.
 
 Important tables include subscriptions, schedules, raw items, Lenses, digests,
-saved items, outbound message mappings, and interaction events. Interaction
+saved items, outbound message mappings, interaction events, the append-only
+`item_signals` engagement ledger, and `item_embeddings` vectors. Interaction
 events should be logged even when the resulting action is a safe no-op.
+`item_signals` rows with a non-empty `dedup_key` are unique per
+`(raw_item_id, signal, dedup_key)` — that index is what makes signal writes
+replay-safe; never bypass it with raw inserts lacking a dedup key when the
+write can be replayed.
 
 ## Delivery And Interaction
 
@@ -160,7 +167,10 @@ saved rows, promoted source notes, or engagement-signal rows.
 Delivery cards carry Lens-generated output verbatim: per-lens `lenses`
 entries (name, summary, bullets), `markdown`/`plain_text` built from that
 content, a per-Lens `groups` list, and a `delivery_instruction`. Adapters
-and agents must send card content as-is — never re-summarize it.
+and agents must send card content as-is — never re-summarize it — and,
+when iterating `groups`, dedupe sends by `delivery_key` (a multi-lens item
+appears in every matching group but is sent once). Digest cards carry the
+full digest in `content_md`/`markdown`/`plain_text`.
 
 ## Knowledge Store
 
@@ -168,10 +178,15 @@ Engagement signals (impression < open < read < save < promote; archive and
 unsave negative) live in the append-only `item_signals` ledger
 (`contents_hub.signals`), written by interaction handlers, `delivery
 record`, the web `/r/{id}` open-redirect, and `item` CLI commands.
-`contents-hub query` ranks items by FTS5 keyword match fused with optional
-embeddings (`CONTENTS_HUB_EMBEDDINGS=openai-compat` + URL/MODEL/KEY env)
-and the time-decayed engagement score; defaults are tunable in the
-`query:` block of `.contents-hub.yaml`. Design: `docs/knowledge-store-plan.md`.
+`contents-hub query` ranks items by FTS5 keyword match (porter-stemmed, OR
+semantics; degraded LIKE scan only when FTS5 is absent) fused via
+reciprocal rank fusion with optional embeddings
+(`CONTENTS_HUB_EMBEDDINGS=openai-compat` + URL/MODEL/KEY env) and an
+absolute tanh-squashed, time-decayed engagement boost. Tunables live in
+the `query:` block of `.contents-hub.yaml`: `signal_weights`,
+`engagement_half_life_days`, `engagement_floor`, `engagement_boost`,
+`engagement_scale`, `recency_boost`, `recency_half_life_days`.
+Design: `docs/knowledge-store-plan.md`.
 
 ## Web UI
 
@@ -183,7 +198,10 @@ Key routes:
 - `GET /subscriptions` and subscription mutation routes
 - `GET /digests`, `GET /digests/{id}`
 - `GET /saved`
-- raw item save/promote/archive routes
+- `GET /r/{item_id}` - records an `open` engagement signal, then 302s to
+  the item URL (http/https only; same-day repeats dedup)
+- raw item save/promote/archive routes (toggle-saved also writes
+  save/unsave signals)
 - Lens inbox routes
 
 When changing action semantics, preserve web route behavior with regression
