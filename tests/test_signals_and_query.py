@@ -528,6 +528,8 @@ def test_reaction_readd_does_not_inflate_engagement(cfg):
 def test_slack_skin_tone_suffix_resolves(cfg):
     assert resolve_reaction_action("+1::skin-tone-2") == "save_and_promote"
     assert resolve_reaction_action(":star::skin-tone-4:") == "save_and_promote"
+    # Unicode skin-tone modifiers (Discord/Telegram raw emoji) also resolve.
+    assert resolve_reaction_action("\U0001F44D\U0001F3FD") == "save_and_promote"
 
 
 def test_impression_dedup_is_platform_scoped(cfg):

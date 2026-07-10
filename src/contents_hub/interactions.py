@@ -44,15 +44,19 @@ REACTION_NAME_ALIASES = {
 }
 
 _VARIATION_SELECTOR = "️"
+# Fitzpatrick skin-tone modifiers (U+1F3FB..U+1F3FF) — Discord/Telegram send
+# e.g. 👍🏽 as the base emoji plus a modifier codepoint.
+_SKIN_TONE_MODIFIERS = "".join(chr(cp) for cp in range(0x1F3FB, 0x1F400))
 
 
 def _normalize_reaction(value: str) -> str:
-    """Normalize a reaction value: strip :colons: and Slack ``::skin-tone-N``
-    suffixes, map names, drop U+FE0F."""
+    """Normalize a reaction value: strip :colons:, Slack ``::skin-tone-N``
+    suffixes, and Unicode skin-tone modifiers; map names; drop U+FE0F."""
     token = str(value or "").strip().strip(":")
     token = token.split("::", 1)[0]
     token = REACTION_NAME_ALIASES.get(token.lower(), token)
-    return token.replace(_VARIATION_SELECTOR, "")
+    token = token.replace(_VARIATION_SELECTOR, "")
+    return "".join(ch for ch in token if ch not in _SKIN_TONE_MODIFIERS)
 
 
 _NORMALIZED_REACTION_RULES = {

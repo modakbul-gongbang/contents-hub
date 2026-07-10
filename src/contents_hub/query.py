@@ -132,7 +132,7 @@ def _fts_ranks(
             (match, limit),
         ).fetchall()
     except sqlite3.OperationalError as exc:
-        logger.warning("FTS query failed (%s); falling back to LIKE", exc)
+        logger.warning("FTS query failed (%s); keyword ranker skipped", exc)
         return {}
     return {int(row["rowid"]): rank for rank, row in enumerate(rows, start=1)}
 
