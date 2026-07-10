@@ -55,8 +55,14 @@ and chat surfaces.
 - Emit channel-ready cards with `deliver pending`, or run collection plus card
   selection in one JSON-only call with `deliver prepare --collect fetch-all`.
 - Persist platform message ids with `delivery record`.
-- Turn reactions such as `👍`, `⭐`, and `❤️` into saved Markdown source notes
-  with `interaction handle`.
+- Turn reactions such as `👍`, `⭐`, and `❤️` (or Slack names like `star`)
+  into saved Markdown source notes with `interaction handle`.
+- Record every layer of interest — delivered, opened, read, saved, promoted —
+  in an engagement signal ledger, and search it with `contents-hub query`
+  (keyword + optional embeddings + time-decayed engagement ranking), so the
+  vault doubles as a personal knowledge store any agent can query.
+- Deliver Lens-generated output **verbatim**, grouped per Lens — cards carry
+  the generated content itself, and adapters never re-summarize it.
 - Let agents install, operate, and verify the system through one repo-local skill.
 
 ## Mental Model

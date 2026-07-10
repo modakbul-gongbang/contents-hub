@@ -2,13 +2,20 @@
 
 | Runtime | Owns | contents-hub commands |
 | --- | --- | --- |
-| Manual shell | Human-triggered runs | `browser open`, `fetch-all`, `digest`, `web` |
+| Manual shell | Human-triggered runs | `browser open`, `fetch-all`, `digest`, `web`, `query`, `item open` |
 | cron | Schedule | `fetch-all`, `digest`, `exploration run-all`, `deliver pending` |
 | macOS launchd | Long-running daemon | `daemon loop` |
-| Hermes | Schedule and Telegram gateway | `fetch-all`, `digest`, `deliver pending`, `delivery record`, `interaction handle` |
-| OpenClaw | Schedule and gateway | `fetch-all`, `digest`, delivery and interaction CLI |
-| Claude Code loop | Agent loop and scheduling | `fetch-all`, `exploration run-all`, `digest` |
-| Codex loop | Agent loop and scheduling | `fetch-all`, `exploration run-all`, `digest` |
+| Hermes | Schedule and gateway (Telegram/Slack/Discord/...) | `fetch-all`, `digest`, `deliver pending`, `delivery record`, `interaction handle`, `query` |
+| OpenClaw | Schedule and gateway (Telegram/Slack/Discord/...) | `fetch-all`, `digest`, delivery and interaction CLI, `query` |
+| Claude Code loop | Agent loop and scheduling | `fetch-all`, `exploration run-all`, `digest`, `query` |
+| Codex loop | Agent loop and scheduling | `fetch-all`, `exploration run-all`, `digest`, `query` |
+
+Every agent runtime (Hermes, OpenClaw, Claude Code, Codex, plain cron) and
+every chat platform (Telegram, Slack, Discord) uses the same four-call
+adapter contract — `deliver prepare|pending` → send verbatim →
+`delivery record` → `interaction handle` — so agent choice and platform
+choice are independent. Reaction rules accept emoji and platform reaction
+names (Slack) alike; see `docs/channels.md`.
 
 ## Skill Registration Notes
 

@@ -67,6 +67,10 @@ Single test:
 - `delivery {record,list}` - outbound message mappings
 - `interaction handle` and `interaction rules list` - normalized interaction
   logging and action routing
+- `item {open,signal,signals}` - engagement signal ledger
+- `query` - knowledge-store search (keyword + optional semantic + engagement
+  ranking); `--context` emits a markdown context pack
+- `index` - build the FTS index and optional embedding vectors
 - `web [--port N]` - dashboard
 
 Every subcommand accepts `--vault PATH`. Resolution order is:
@@ -142,12 +146,32 @@ Adapters should follow this flow:
 
 The default reaction rules are:
 
-- `⭐`, `❤️`, `❤` -> `save_and_promote`
+- `👍`, `⭐`, `❤️`, `❤` -> `save_and_promote`
 - `✅` -> `mark_read`
 - `🗑` -> `archive`
 
+Platform reaction *names* resolve through the same table (Slack sends
+`star`, `+1`, `white_check_mark`, `wastebasket`); `interaction rules list`
+exposes the alias map.
+
 Action handlers must be idempotent. Replaying the same event must not duplicate
-saved rows or promoted source notes.
+saved rows, promoted source notes, or engagement-signal rows.
+
+Delivery cards carry Lens-generated output verbatim: per-lens `lenses`
+entries (name, summary, bullets), `markdown`/`plain_text` built from that
+content, a per-Lens `groups` list, and a `delivery_instruction`. Adapters
+and agents must send card content as-is — never re-summarize it.
+
+## Knowledge Store
+
+Engagement signals (impression < open < read < save < promote; archive and
+unsave negative) live in the append-only `item_signals` ledger
+(`contents_hub.signals`), written by interaction handlers, `delivery
+record`, the web `/r/{id}` open-redirect, and `item` CLI commands.
+`contents-hub query` ranks items by FTS5 keyword match fused with optional
+embeddings (`CONTENTS_HUB_EMBEDDINGS=openai-compat` + URL/MODEL/KEY env)
+and the time-decayed engagement score; defaults are tunable in the
+`query:` block of `.contents-hub.yaml`. Design: `docs/knowledge-store-plan.md`.
 
 ## Web UI
 

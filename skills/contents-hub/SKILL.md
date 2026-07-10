@@ -66,6 +66,9 @@ contents-hub deliver pending --help
 contents-hub deliver prepare --help
 contents-hub delivery record --help
 contents-hub interaction handle --help
+contents-hub query --help
+contents-hub item --help
+contents-hub index --help
 ```
 
 If the command is missing, install or update a durable checkout:
@@ -327,8 +330,15 @@ contents-hub deliver pending --payload-type digest --limit 5 --format json
 run `fetch-all`, `tick`, or no collector first, then emits one JSON object with
 `collector` and `delivery`. The nested delivery JSON contains `payload_type`,
 stable raw item or digest ids, titles, URLs, summaries, `delivery_key`,
-`dedupe_key`, `plain_text`, `markdown`, Lens ids, and enough context for an
-adapter to send a channel message.
+`dedupe_key`, `plain_text`, `markdown`, per-lens `lenses` entries (name,
+summary, bullets), a per-Lens `groups` list, and a `delivery_instruction`.
+
+**Verbatim rule (mandatory):** the card `markdown`/`plain_text` already
+contains the Lens-generated output; digest cards carry the full digest in
+`content_md`. Send that content to Telegram/Slack/Discord exactly as-is.
+Never summarize, rewrite, shorten, merge, or reorder cards — re-summarizing
+destroys the Lens layer. Deliver one Lens group at a time (iterate
+`groups`) so each topic stays separated in the channel.
 
 contents-hub decides which cards are deliverable. Use `--origin subscription`,
 `--lens-matched`, and `--first-seen-only` instead of writing runtime SQLite
@@ -387,12 +397,54 @@ contents-hub interaction rules list
 
 Default reaction rules:
 
-- `⭐`, `❤️`, `❤` -> `save_and_promote`
+- `👍`, `⭐`, `❤️`, `❤` -> `save_and_promote`
 - `✅` -> `mark_read`
 - `🗑` -> `archive`
 
+Slack sends reaction names instead of emoji; `star`, `+1`/`thumbsup`,
+`heart`, `white_check_mark`, and `wastebasket` resolve through the same
+rules, so pass Slack's `event.reaction` straight through as `value`.
+`interaction rules list` returns the `name_aliases` map.
+
 Unsupported reactions, unknown messages, and repeated events should return
 machine-readable safe results instead of crashing.
+
+## Knowledge Store (query, item, index)
+
+Every handled reaction, delivered card, and dashboard link click also lands
+in the engagement signal ledger (`item_signals`), which powers ranked
+search over everything collected:
+
+```bash
+contents-hub query "vector databases" --limit 10 --format json
+contents-hub query "vector databases" --since 90d --lens ai-research
+contents-hub query "vector databases" --saved-only --explain
+contents-hub query "vector databases" --context   # markdown context pack
+```
+
+Results fuse FTS5 keyword rank, an optional semantic ranker, and the
+time-decayed engagement score (open +1, read +0.5, save +3, promote +5,
+archive -2). Record signals directly when acting on behalf of the user:
+
+```bash
+contents-hub item open 42                 # record open + launch URL
+contents-hub item open 42 --no-launch
+contents-hub item signal 42 --signal note --metadata '{"comment":"revisit"}'
+contents-hub item signals 42              # ledger + engagement score
+```
+
+Build the index (FTS is automatic; embeddings are opt-in):
+
+```bash
+contents-hub index --rebuild-fts
+CONTENTS_HUB_EMBEDDINGS=openai-compat \
+CONTENTS_HUB_EMBEDDINGS_URL=http://localhost:11434/v1 \
+CONTENTS_HUB_EMBEDDINGS_MODEL=nomic-embed-text \
+contents-hub index --backfill
+```
+
+Without an embedding provider, `query` runs keyword-only and reports
+`"rankers": ["fts"]`; nothing leaves the machine.
 
 ## Channel Adapter Shape
 
@@ -400,7 +452,8 @@ Adapters for Telegram, Slack, Discord, Hermes, OpenClaw, or another gateway
 should:
 
 1. call `deliver prepare --collect fetch-all --format json` or `deliver pending --format json`
-2. send each card through the platform
+2. send each card's `markdown`/`plain_text` through the platform **verbatim**,
+   one Lens group at a time (`delivery.groups`)
 3. call `delivery record` with the returned message id
 4. normalize platform events to the shared event shape
 5. call `interaction handle --event-json ... --format json`

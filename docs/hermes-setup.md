@@ -457,6 +457,13 @@ migration copies compatible `telegram_raw_item_messages` rows into the official
 `outbound_messages` table. New adapters should call `delivery record` instead
 of writing custom mapping tables.
 
+**Verbatim rule for Hermes prompts:** delivery cards embed the
+Lens-generated output in `markdown`/`plain_text` (digest cards carry the
+full digest in `content_md`), grouped per Lens in `delivery.groups`. The
+Hermes prompt must send that content to the channel exactly as-is, one Lens
+group per message — never summarize, rewrite, or merge cards. The payload's
+`delivery_instruction` field states the same rule; repeat it in the prompt.
+
 Reaction handling flow:
 
 1. Platform event arrives at Hermes, a bot, or another gateway.
@@ -466,6 +473,27 @@ Reaction handling flow:
 4. contents-hub looks up `outbound_messages`.
 5. `👍`, `⭐`, `❤️`, and `❤` save and promote the raw item into a markdown source
    document; `✅` marks read; `🗑` archives.
+
+The same loop works on any Hermes gateway platform — Telegram, Slack,
+Discord, WhatsApp — with `--platform <name>` on `delivery record`. Slack
+sends reaction *names* (`star`, `+1`, `white_check_mark`, `wastebasket`);
+they resolve through the same rules without translation
+(`interaction rules list` shows the alias map). See `docs/channels.md` for
+the Slack walkthrough.
+
+## Knowledge Store Queries
+
+Hermes agents can answer "what have I collected/saved about X" from the
+vault instead of searching the web:
+
+```bash
+contents-hub --vault "$HOME/contents-vault" query "vector databases" --limit 10 --format json
+contents-hub --vault "$HOME/contents-vault" query "vector databases" --context
+```
+
+Ranking blends keyword match with the user's own engagement history
+(opens, saves, promotes; time-decayed). When the agent opens an item on the
+user's behalf, record the signal with `contents-hub item open <id> --no-launch`.
 
 ## Agent Checklist
 

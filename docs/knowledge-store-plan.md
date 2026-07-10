@@ -1,7 +1,10 @@
 # Personal Knowledge Store — Design & Delivery Plan
 
-Status: proposed (2026-07). CLI-first; the MCP surface comes later and wraps
-the same commands (see `docs/competitive-analysis-2026.md`, O1).
+Status: **phases 1–3 implemented** (2026-07) — `item_signals` ledger +
+backfill, `item {open,signal,signals}`, FTS5 + `query`/`index`, the web
+`/r/{item_id}` open-redirect, and the optional embedding provider are live.
+Phase 4 (MCP wrapper) remains future work and wraps the same commands
+(see `docs/competitive-analysis-2026.md`, O1).
 
 ## 1. Goal
 

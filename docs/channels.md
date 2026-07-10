@@ -24,9 +24,26 @@ contents-hub --vault ~/contents-vault deliver prepare \
 `deliver pending` does not collect. `deliver prepare` can first run
 `fetch-all`, `tick`, or no collector, then returns one JSON object with
 `collector` and `delivery` keys. The nested delivery response is an object with
-`ok`, `count`, and `items`. Each item includes stable ids such as
-`raw_item_id`, `digest_id`, `payload_type`, and adapter conveniences such as
-`delivery_key`, `dedupe_key`, `plain_text`, and `markdown`.
+`ok`, `count`, `items`, `groups`, and `delivery_instruction`. Each item
+includes stable ids such as `raw_item_id`, `digest_id`, `payload_type`, and
+adapter conveniences such as `delivery_key`, `dedupe_key`, `plain_text`, and
+`markdown`.
+
+### Verbatim delivery contract
+
+Raw-item cards embed the Lens-generated output itself: each `lenses` entry
+carries `lens_id`, `name`, `summary`, and `bullets`, and the card's
+`markdown`/`plain_text` are built from that content. Digest cards carry the
+full generated digest in `content_md` (and `markdown`). **Adapters and
+agents must send `markdown` (or `plain_text`) as-is.** Do not summarize,
+rewrite, merge, or reorder cards — the Lens/digest output *is* the
+deliverable, and re-summarizing it in the gateway destroys the Lens layer.
+The payload repeats this rule in `delivery_instruction`.
+
+`groups` lists cards per Lens (`lens_id`, `name`, `raw_item_ids`, `count`;
+unlensed items group under `lens_id: ""`). Adapters that deliver one topic
+per message or per thread should iterate `groups` instead of interleaving
+lenses.
 
 contents-hub decides which cards are deliverable. Core candidate selection
 handles outbound-message exclusion, raw item origin filters, Lens-matched
@@ -92,6 +109,19 @@ Default rules:
 | `✅` | `mark_read` |
 | `🗑` | `archive` |
 
+Slack (and Discord custom emoji) send reaction **names**, not emoji
+characters. The same rules accept the common names — `+1`/`thumbsup`,
+`star`, `heart`, `white_check_mark`, `wastebasket` — with `:colons:` and
+the U+FE0F variation selector normalized away. `interaction rules list`
+returns both the emoji rules and the `name_aliases` map, so a Slack
+`reaction_added` event can pass `event.reaction` straight through as
+`value`.
+
+Handled interactions also mirror into the engagement signal ledger
+(`item_signals`): save/read/archive/promote signals with the platform event
+id as the dedup key, and `delivery record` writes an `impression` per card.
+This powers `contents-hub query` ranking; see `docs/knowledge-store-plan.md`.
+
 `save_and_promote` inserts the item into `saved_items` and writes the promoted
 raw item as a markdown source document in the vault. The action is idempotent:
 repeat reactions to the same normalized event are logged once, and already
@@ -103,6 +133,25 @@ promoted items are treated as no-ops.
   `interaction handle`.
 - Slack and Discord: fixture normalizers in `contents_hub.channels` prove the
   shared event shape without requiring SDKs in the base install.
+
+### Slack adapter walkthrough
+
+A Slack adapter (bot token with `chat:write` + `reactions:read`, Events API
+subscription for `reaction_added`) follows the same four calls as every
+other platform:
+
+1. `contents-hub deliver prepare --collect fetch-all --payload-type raw_item
+   --lens-matched --format json`
+2. For each group in `delivery.groups`, post the member cards' `markdown`
+   verbatim via `chat.postMessage` (Slack renders `**bold**` as mrkdwn after
+   a `**`→`*` swap; everything else passes through).
+3. `contents-hub delivery record --platform slack --workspace-id <team_id>
+   --channel-id <channel> --message-id <ts> --payload-type raw_item
+   --raw-item-id <id>` — Slack's message `ts` is the message id.
+4. On `reaction_added`, forward the event with
+   `contents_hub.channels.normalize_slack_event` (or equivalent JSON) to
+   `contents-hub interaction handle --event-json '<json>'`. Reaction names
+   like `star` resolve without translation.
 
 The base package does not import Telegram, Slack, or Discord SDKs. Full bots can
 live in optional integration packages or external runtimes as long as they call

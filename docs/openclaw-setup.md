@@ -166,6 +166,33 @@ The adapter must read `raw_item_id` or `digest_id` from
 `delivery record`. Without that mapping, reactions cannot be resolved back to
 contents-hub items.
 
+**Verbatim rule for OpenClaw prompts:** the card `markdown` already contains
+the Lens-generated output, and digest cards carry the full digest in
+`content_md`. Instruct the OpenClaw agent to send that text to the channel
+exactly as-is, one Lens group (`delivery.groups`) per message. Do not let
+the agent "helpfully" summarize or rewrite cards — the payload's
+`delivery_instruction` states this and the prompt should repeat it.
+
+This works for any OpenClaw gateway platform — Telegram, Slack, Discord,
+WhatsApp — because the contents-hub side only needs `--platform <name>` on
+`delivery record` and the platform's message id. Slack reaction names
+(`star`, `+1`, `white_check_mark`, `wastebasket`) resolve without
+translation; see `docs/channels.md` for the Slack walkthrough.
+
+## Knowledge Store Queries
+
+OpenClaw agents can answer "내가 봤던 것 중에" / "what do I know about X"
+questions from the vault instead of re-searching the web:
+
+```bash
+contents-hub --vault "$HOME/contents-vault" query "vector databases" --limit 10 --format json
+contents-hub --vault "$HOME/contents-vault" query "vector databases" --context
+```
+
+Ranking already accounts for what the user clicked, saved, and promoted
+(engagement signals with time decay). When the agent opens an item for the
+user, record it: `contents-hub item open <id> --no-launch`.
+
 ## Agent Checklist
 
 Before setup:
