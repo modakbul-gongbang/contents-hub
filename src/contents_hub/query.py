@@ -47,7 +47,8 @@ DEFAULT_RECENCY_HALF_LIFE_DAYS = 30.0
 _FTS_TABLE_SQL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS raw_items_fts USING fts5(
     title, body, content_summary,
-    content='raw_items', content_rowid='id'
+    content='raw_items', content_rowid='id',
+    tokenize='porter unicode61'
 );
 CREATE TRIGGER IF NOT EXISTS raw_items_fts_ai AFTER INSERT ON raw_items BEGIN
     INSERT INTO raw_items_fts(rowid, title, body, content_summary)
@@ -95,9 +96,13 @@ def rebuild_fts(conn: sqlite3.Connection) -> bool:
 
 
 def _fts_query_string(text: str) -> str:
-    """Quote each term so user text can't break FTS syntax."""
+    """Quote each term (so user text can't break FTS syntax) and OR them.
+
+    OR semantics favor recall — BM25 still ranks items matching more terms
+    higher — and the porter tokenizer folds plural/verb forms together.
+    """
     terms = [term.replace('"', "") for term in text.split()]
-    return " ".join(f'"{term}"' for term in terms if term)
+    return " OR ".join(f'"{term}"' for term in terms if term)
 
 
 def _fts_ranks(conn: sqlite3.Connection, text: str) -> dict[int, int]:
