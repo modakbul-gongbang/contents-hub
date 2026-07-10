@@ -25,6 +25,7 @@ from contents_hub.config import WikiConfig
 from contents_hub.db import get_db
 from contents_hub.source_types import SOURCE_TYPES, source_type_options
 from contents_hub.subscriptions import SubscriptionStatus, SubscriptionStore
+from contents_hub.timeutil import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -650,7 +651,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         request: Request,
         next_url: str = Form(""),
     ):
-        import datetime as _dt
 
 
         cfg = request.app.state.config
@@ -675,7 +675,7 @@ def create_app(config: WikiConfig) -> FastAPI:
                 else:
                     conn.execute(
                         "INSERT INTO saved_items (raw_item_id, saved_at) VALUES (?, ?)",
-                        (item_id, _dt.datetime.now(_dt.timezone.utc).isoformat()),
+                        (item_id, now_iso()),
                     )
                     saved = True
         except HTTPException:
@@ -1092,7 +1092,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         Trial mode lives here because :func:`api.fetch_subscription` always
         persists, which is incorrect for a preview run.
         """
-        import datetime as _dt
 
         from contents_hub.executor import execute_trial as _executor_trial
         from contents_hub.recipes import RecipeRegistry
@@ -1142,7 +1141,7 @@ def create_app(config: WikiConfig) -> FastAPI:
                 "ok": False,
                 "items": 0,
                 "error": str(exc),
-                "finished_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                "finished_at": now_iso(),
                 "recipe_mode": "failed",
                 "samples": [],
             }
@@ -1165,7 +1164,7 @@ def create_app(config: WikiConfig) -> FastAPI:
             "ok": ok,
             "items": len(result.items),
             "error": "" if ok else (getattr(result, "error", "") or "unknown"),
-            "finished_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "finished_at": now_iso(),
             "recipe_mode": recipe_mode,
             # Staged preview — committed to raw_items only on Keep.
             "samples": sample_dicts[:20],
@@ -1180,7 +1179,6 @@ def create_app(config: WikiConfig) -> FastAPI:
     async def subscription_keep(sub_id: str, request: Request):
         """Approve a validating subscription: commit sampled items to raw_items,
         flip status to active, clear trial state."""
-        import datetime as _dt
 
         from contents_hub.item_key import item_key
 
@@ -1196,7 +1194,7 @@ def create_app(config: WikiConfig) -> FastAPI:
 
         trial = (sub.config or {}).get("trial_result") or {}
         samples: list[dict] = trial.get("samples") or []
-        now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        now_str = now_iso()
         inserted = 0
 
         try:
@@ -1220,8 +1218,8 @@ def create_app(config: WikiConfig) -> FastAPI:
                             int(sub_id),
                             summary_preview,
                             s.get("published_at"),
-                            now_iso,
-                            now_iso,
+                            now_str,
+                            now_str,
                         ),
                     )
                     if cur.rowcount and cur.lastrowid:
@@ -1233,7 +1231,7 @@ def create_app(config: WikiConfig) -> FastAPI:
                            config = json_remove(config, '$.trial_result'),
                            updated_at = ?
                        WHERE id = ?""",
-                    (now_iso, now_iso, int(sub_id)),
+                    (now_str, now_str, int(sub_id)),
                 )
         except Exception as exc:
             logger.warning("keep failed for %s: %s", sub.url, exc)
@@ -2049,7 +2047,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         409 if the item is already promoted (R-T2.3 — promoted source files
         must not be deleted or modified).
         """
-        import datetime as _dt
 
 
         cfg = request.app.state.config
@@ -2087,11 +2084,11 @@ def create_app(config: WikiConfig) -> FastAPI:
                         },
                         status_code=409,
                     )
-                now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                now_str = now_iso()
                 conn.execute(
                     "UPDATE raw_items SET status = 'archived', "
                     "updated_at = ? WHERE id = ?",
-                    (now_iso, item_id),
+                    (now_str, item_id),
                 )
         except Exception as exc:
             logger.warning("archive failed for item %d: %s", item_id, exc)
@@ -2106,7 +2103,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         promoted or already-raw items. ``raw_item_lenses`` rows are untouched
         — Lens metadata persists across the round-trip (R-B2.6).
         """
-        import datetime as _dt
 
 
         cfg = request.app.state.config
@@ -2134,11 +2130,11 @@ def create_app(config: WikiConfig) -> FastAPI:
                         },
                         status_code=409,
                     )
-                now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                now_str = now_iso()
                 conn.execute(
                     "UPDATE raw_items SET status = 'raw', "
                     "updated_at = ? WHERE id = ?",
-                    (now_iso, item_id),
+                    (now_str, item_id),
                 )
         except Exception as exc:
             logger.warning("restore failed for item %d: %s", item_id, exc)

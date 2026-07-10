@@ -13,7 +13,7 @@ import json
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -29,6 +29,7 @@ from contents_hub.db import get_db
 from contents_hub.item_key import item_key
 from contents_hub.models import FetchedItem
 from contents_hub.runners import AgentRunner, get_default_runner
+from contents_hub.timeutil import now_iso
 
 
 ARTIFACTS_DIRNAME = "exploration-artifacts"
@@ -36,7 +37,7 @@ DEFAULT_STRATEGY_TARGET_SURFACES = ("threads.feed", "threads.search")
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return now_iso()
 
 
 def _json_dumps(value: Any) -> str:

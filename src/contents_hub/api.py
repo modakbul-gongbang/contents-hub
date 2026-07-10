@@ -45,7 +45,6 @@ import logging
 import sqlite3
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
 from contents_hub.config import WikiConfig
@@ -64,6 +63,7 @@ from contents_hub.item_key import normalize_url
 from contents_hub.models import FetchFailureReason, FetchResult, ListItem, infer_from_error
 from contents_hub.recipes import RecipeRegistry
 from contents_hub.subscriptions import Subscription, SubscriptionStore
+from contents_hub.timeutil import now_iso
 from contents_hub.tools.storage import persist_raw
 
 logger = logging.getLogger(__name__)
@@ -231,7 +231,7 @@ async def _persist_and_record(
     # Persist mutated config + fetch status on the caller-owned connection.
     # Opening SubscriptionStore's own connection here can deadlock SQLite
     # while raw_items writes are still in this transaction.
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_str = now_iso()
     config_data = dict(sub.config)
     if sub.tags:
         config_data["tags"] = sub.tags
@@ -247,7 +247,7 @@ async def _persist_and_record(
                    updated_at = ?,
                    config = ?
                WHERE id = ?""",
-            (now_iso, now_iso, json.dumps(config_data), sub_id_int),
+            (now_str, now_str, json.dumps(config_data), sub_id_int),
         )
     else:
         row = conn.execute(
@@ -269,7 +269,7 @@ async def _persist_and_record(
                 new_status,
                 result.error or "fetch failed",
                 new_errors,
-                now_iso,
+                now_str,
                 json.dumps(config_data),
                 sub_id_int,
             ),
@@ -920,7 +920,7 @@ def _query_due_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     over without changing the due-detection semantics (R-T7.1 / T9
     will then delete the daemon-side copy).
     """
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_str = now_iso()
     return list(
         conn.execute(
             """SELECT id, url, title, source_type, status,
@@ -939,7 +939,7 @@ def _query_due_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                         ) <= datetime(?)
                  )
                ORDER BY last_fetched_at ASC NULLS FIRST""",
-            (now_iso,),
+            (now_str,),
         ).fetchall()
     )
 

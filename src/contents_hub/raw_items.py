@@ -9,7 +9,6 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
@@ -18,6 +17,7 @@ from urllib.request import Request, urlopen
 from contents_hub.config import WikiConfig
 from contents_hub.db import get_db
 from contents_hub.item_key import normalize_url
+from contents_hub.timeutil import now_iso
 
 MANUAL_PRIORITY = 100
 DEFAULT_MANUAL_LENS_ID = "manual-inbox"
@@ -270,7 +270,7 @@ def add_manual_raw_item(
 
     body = body.strip()
     content_summary = content_summary.strip()
-    now = datetime.now(timezone.utc).isoformat()
+    now = now_iso()
     metadata = {
         **metadata,
         "manual": True,

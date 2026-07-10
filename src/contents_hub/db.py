@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Generator
 
 from contents_hub.config import WikiConfig
+from contents_hub.timeutil import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -1244,7 +1245,7 @@ def record_collected_tweets_batch(
     if not records:
         return 0
 
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_str = now_iso()
 
     def _do(c: sqlite3.Connection) -> int:
         rows_before = c.execute(
@@ -1254,7 +1255,7 @@ def record_collected_tweets_batch(
             """INSERT OR IGNORE INTO collected_tweets
                 (tweet_id, subscription_url, source_file, collected_at)
             VALUES (?, ?, ?, ?)""",
-            [(tid, url, sf, now_iso) for tid, url, sf in records],
+            [(tid, url, sf, now_str) for tid, url, sf in records],
         )
         c.commit()
         rows_after = c.execute(

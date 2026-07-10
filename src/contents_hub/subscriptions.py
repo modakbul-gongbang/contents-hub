@@ -33,6 +33,7 @@ from contents_hub.source_types import (
     detect_source_type as detect_catalog_source_type,
     is_supported_source_type,
 )
+from contents_hub.timeutil import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -670,7 +671,7 @@ class SubscriptionStore:
         with get_db(self._config) as conn:
             conn.execute(
                 "UPDATE subscriptions SET title = ?, updated_at = ? WHERE url = ?",
-                (title, datetime.now(timezone.utc).isoformat(), normalized),
+                (title, now_iso(), normalized),
             )
 
     def update_lenses(self, url: str, lenses: list[str]) -> None:
@@ -681,7 +682,7 @@ class SubscriptionStore:
         with get_db(self._config) as conn:
             conn.execute(
                 "UPDATE subscriptions SET default_lens_ids = ?, updated_at = ? WHERE url = ?",
-                (json.dumps(lenses), datetime.now(timezone.utc).isoformat(), normalized),
+                (json.dumps(lenses), now_iso(), normalized),
             )
 
     def update_tags(self, url: str, tags: list[str]) -> None:
@@ -693,7 +694,7 @@ class SubscriptionStore:
         with get_db(self._config) as conn:
             conn.execute(
                 "UPDATE subscriptions SET config = ?, updated_at = ? WHERE url = ?",
-                (json.dumps(sub.config), datetime.now(timezone.utc).isoformat(), normalized),
+                (json.dumps(sub.config), now_iso(), normalized),
             )
 
     def update_schedule(
@@ -720,7 +721,7 @@ class SubscriptionStore:
                 (
                     sched.cron,
                     _schedule_to_interval(sched),
-                    datetime.now(timezone.utc).isoformat(),
+                    now_iso(),
                     normalized,
                 ),
             )
@@ -734,7 +735,7 @@ class SubscriptionStore:
         with get_db(self._config) as conn:
             conn.execute(
                 "UPDATE subscriptions SET config = ?, updated_at = ? WHERE url = ?",
-                (json.dumps(sub.config), datetime.now(timezone.utc).isoformat(), normalized),
+                (json.dumps(sub.config), now_iso(), normalized),
             )
 
     def set_status(self, url: str, status: SubscriptionStatus) -> None:
@@ -745,7 +746,7 @@ class SubscriptionStore:
         with get_db(self._config) as conn:
             conn.execute(
                 "UPDATE subscriptions SET status = ?, updated_at = ? WHERE url = ?",
-                (status.value, datetime.now(timezone.utc).isoformat(), normalized),
+                (status.value, now_iso(), normalized),
             )
 
     def record_fetch(self, url: str, item_count: int, error: str = "") -> None:
@@ -753,7 +754,7 @@ class SubscriptionStore:
 
         normalized = _normalize_feed_url(url)
         sub = self._require(normalized)
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_str = now_iso()
 
         # Store last_fetched_count in config JSON for backward compat
         config_data = dict(sub.config)
@@ -785,7 +786,7 @@ class SubscriptionStore:
                            updated_at = ?,
                            config = ?
                        WHERE url = ?""",
-                    (new_status, error, new_errors, now_iso,
+                    (new_status, error, new_errors, now_str,
                      json.dumps(config_data), normalized),
                 )
             else:
@@ -796,7 +797,7 @@ class SubscriptionStore:
                            last_fetched_at = ?, updated_at = ?,
                            config = ?
                        WHERE url = ?""",
-                    (now_iso, now_iso, json.dumps(config_data), normalized),
+                    (now_str, now_str, json.dumps(config_data), normalized),
                 )
 
     @property

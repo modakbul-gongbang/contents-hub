@@ -57,6 +57,7 @@ from contents_hub.subscriptions import (
     SubscriptionStatus,
     SubscriptionStore,
 )
+from contents_hub.timeutil import now_iso
 
 
 # ---------------------------------------------------------------------------
@@ -1186,7 +1187,7 @@ def _handle_lens_create(config, args) -> int:
         _emit_lens_payload(False, None, error=str(exc))
         return 1
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = now_iso()
     name = (getattr(args, "name", "") or "").strip() or lens_id
     description = (getattr(args, "description", "") or "").strip()
     keywords = _normalize_keywords(getattr(args, "keywords", []))
@@ -1290,7 +1291,7 @@ def _handle_lens_update(config, args) -> int:
         return 0 if payload is not None else 1
 
     assignments.append("updated_at = ?")
-    params.append(datetime.now(timezone.utc).isoformat())
+    params.append(now_iso())
     params.append(lens_id)
 
     with get_db(config) as conn:

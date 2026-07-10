@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from contents_hub.config import WikiConfig
 from contents_hub.db import get_db
 from contents_hub.promote import PromoteError, promote_raw_item, source_filename
+from contents_hub.timeutil import now_iso
 
 
 SAVE_AND_PROMOTE_REACTIONS = {"👍", "⭐", "❤️", "❤"}
@@ -40,7 +40,7 @@ class NormalizedInteraction:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return now_iso()
 
 
 def _json_object(value: Any) -> str:

@@ -35,6 +35,7 @@ from typing import Any, Iterable, TypedDict
 
 from contents_hub.item_key import item_key
 from contents_hub.models import FetchedItem
+from contents_hub.timeutil import now_iso
 from contents_hub.tools.base import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ def _row_payload(item: FetchedItem, sub_id: int) -> tuple[Any, ...]:
     summary_preview = (item.summary or "")[:500]
     metadata_json = _metadata_json(item)
     pa_iso = _to_iso(item.published_at)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_str = now_iso()
 
     return (
         key,
@@ -100,8 +101,8 @@ def _row_payload(item: FetchedItem, sub_id: int) -> tuple[Any, ...]:
         summary_preview,
         metadata_json,
         pa_iso,
-        now_iso,
-        now_iso,
+        now_str,
+        now_str,
     )
 
 

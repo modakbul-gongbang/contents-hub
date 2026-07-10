@@ -20,6 +20,7 @@ from pathlib import Path
 from contents_hub.config import WikiConfig
 from contents_hub.db import get_db
 from contents_hub.frontmatter import Frontmatter, assemble_markdown
+from contents_hub.timeutil import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -364,7 +365,7 @@ def _promote_with_conn(
 
     conn.execute(
         "UPDATE raw_items SET status='promoted', updated_at=? WHERE id=?",
-        (datetime.now(timezone.utc).isoformat(), raw_item_id),
+        (now_iso(), raw_item_id),
     )
     conn.commit()
     logger.info("Promoted raw_item %d -> %s", raw_item_id, path)
