@@ -21,13 +21,52 @@ def _join_card_parts(parts: list[str]) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
-def _raw_item_card(row, lens_ids: list[str] | None = None) -> dict[str, Any]:
+# Adapters must relay generated content as-is; re-summarizing lens output
+# defeats the Lens layer. Included verbatim in every payload.
+DELIVERY_INSTRUCTION = (
+    "Send each card's markdown (or plain_text) verbatim. Do not summarize, "
+    "rewrite, merge, or reorder cards; the lens content is the deliverable."
+)
+
+
+def _lens_sections(title: str, url: str, lenses: list[dict[str, Any]], *, markdown: bool) -> str:
+    """Render a card body from verbatim lens output, one block per Lens."""
+    heading = f"**{title}**" if (markdown and title) else title
+    parts: list[str] = [heading]
+    for lens in lenses:
+        label = lens.get("name") or lens.get("lens_id") or ""
+        block_lines: list[str] = []
+        summary = (lens.get("summary") or "").strip()
+        header = f"[{label}]" if label else ""
+        if summary:
+            block_lines.append(f"{header} {summary}".strip())
+        elif header:
+            block_lines.append(header)
+        for bullet in lens.get("bullets") or []:
+            bullet_text = str(bullet).strip()
+            if bullet_text:
+                block_lines.append(f"- {bullet_text}")
+        if block_lines:
+            parts.append("\n".join(block_lines))
+    parts.append(url)
+    return _join_card_parts(parts)
+
+
+def _raw_item_card(row, lenses: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     raw_item_id = int(row["id"])
     title = row["title"] or row["url"]
     url = row["url"] or ""
     summary = row["content_summary"] or row["body"] or ""
-    plain_text = _join_card_parts([title, summary, url])
-    markdown = _join_card_parts([f"**{title}**" if title else "", summary, url])
+    lenses = lenses or []
+    has_lens_content = any(
+        (lens.get("summary") or "").strip() or lens.get("bullets") for lens in lenses
+    )
+    if has_lens_content:
+        plain_text = _lens_sections(title, url, lenses, markdown=False)
+        markdown = _lens_sections(title, url, lenses, markdown=True)
+    else:
+        plain_text = _join_card_parts([title, summary, url])
+        markdown = _join_card_parts([f"**{title}**" if title else "", summary, url])
     return {
         "payload_type": "raw_item",
         "raw_item_id": raw_item_id,
@@ -42,7 +81,8 @@ def _raw_item_card(row, lens_ids: list[str] | None = None) -> dict[str, Any]:
         "source_type": row["source_type"] or "",
         "origin": row["origin"] or "",
         "status": row["status"] or "",
-        "lens_ids": lens_ids or [],
+        "lens_ids": [lens["lens_id"] for lens in lenses],
+        "lenses": lenses,
         "collected_at": row["collected_at"],
         "published_at": row["published_at"],
     }
@@ -50,6 +90,7 @@ def _raw_item_card(row, lens_ids: list[str] | None = None) -> dict[str, Any]:
 
 def _digest_card(row) -> dict[str, Any]:
     sections = _loads_json_array(row["sections_json"] or "[]")
+    content_md = row["content_md"] or ""
     return {
         "payload_type": "digest",
         "raw_item_id": None,
@@ -59,28 +100,74 @@ def _digest_card(row) -> dict[str, Any]:
         "item_count": int(row["item_count"] or 0),
         "created_at": row["created_at"],
         "status": row["status"] or "",
-        "summary": (row["content_md"] or "")[:1000],
+        "summary": content_md[:1000],
+        # Full generated digest — adapters send this verbatim, never a re-summary.
+        "content_md": content_md,
+        "markdown": content_md,
         "sections": sections,
     }
 
 
-def _lens_ids_by_raw_item(conn, raw_item_ids: list[int]) -> dict[int, list[str]]:
+def _lenses_by_raw_item(conn, raw_item_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+    """Per-item verbatim lens output: id, display name, summary, bullets."""
     if not raw_item_ids:
         return {}
     placeholders = ",".join("?" for _ in raw_item_ids)
     rows = conn.execute(
         f"""
-        SELECT raw_item_id, lens_id
-        FROM raw_item_lenses
-        WHERE raw_item_id IN ({placeholders})
-        ORDER BY raw_item_id, lens_id
+        SELECT ril.raw_item_id, ril.lens_id, ril.summary, ril.bullets_json,
+               COALESCE(l.name, '') AS lens_name
+        FROM raw_item_lenses ril
+        LEFT JOIN lenses l ON l.id = ril.lens_id
+        WHERE ril.raw_item_id IN ({placeholders})
+        ORDER BY ril.raw_item_id, ril.lens_id
         """,
         tuple(raw_item_ids),
     ).fetchall()
-    lens_ids: dict[int, list[str]] = {raw_item_id: [] for raw_item_id in raw_item_ids}
+    lenses: dict[int, list[dict[str, Any]]] = {raw_item_id: [] for raw_item_id in raw_item_ids}
     for row in rows:
-        lens_ids.setdefault(int(row["raw_item_id"]), []).append(row["lens_id"])
-    return lens_ids
+        lenses.setdefault(int(row["raw_item_id"]), []).append(
+            {
+                "lens_id": row["lens_id"],
+                "name": row["lens_name"] or row["lens_id"],
+                "summary": row["summary"] or "",
+                "bullets": [
+                    str(bullet)
+                    for bullet in _loads_json_array(row["bullets_json"] or "[]")
+                ],
+            }
+        )
+    return lenses
+
+
+def _lens_groups(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group raw-item cards per Lens so adapters can deliver one lens at a time."""
+    groups: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for card in cards:
+        if card.get("payload_type") != "raw_item":
+            continue
+        lenses = card.get("lenses") or []
+        if not lenses:
+            key = ""
+            if key not in groups:
+                groups[key] = {"lens_id": "", "name": "unlensed", "raw_item_ids": []}
+                order.append(key)
+            groups[key]["raw_item_ids"].append(card["raw_item_id"])
+            continue
+        for lens in lenses:
+            key = lens["lens_id"]
+            if key not in groups:
+                groups[key] = {
+                    "lens_id": key,
+                    "name": lens.get("name") or key,
+                    "raw_item_ids": [],
+                }
+                order.append(key)
+            groups[key]["raw_item_ids"].append(card["raw_item_id"])
+    return [
+        {**groups[key], "count": len(groups[key]["raw_item_ids"])} for key in order
+    ]
 
 
 def delivery_payload(
@@ -150,8 +237,8 @@ def delivery_payload(
                 """,
                 tuple(params),
             ).fetchall()
-            lens_ids = _lens_ids_by_raw_item(conn, [int(row["id"]) for row in rows])
-            cards.extend(_raw_item_card(row, lens_ids.get(int(row["id"]), [])) for row in rows)
+            lenses = _lenses_by_raw_item(conn, [int(row["id"]) for row in rows])
+            cards.extend(_raw_item_card(row, lenses.get(int(row["id"]), [])) for row in rows)
 
         if payload_type in {"all", "digest"} and len(cards) < limit:
             rows = conn.execute(
@@ -176,6 +263,8 @@ def delivery_payload(
         "payload_type": payload_type,
         "count": len(cards),
         "items": cards,
+        "groups": _lens_groups(cards),
+        "delivery_instruction": DELIVERY_INSTRUCTION,
     }
 
 

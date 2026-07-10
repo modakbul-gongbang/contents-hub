@@ -259,14 +259,26 @@ def test_pending_delivery_filters_subscription_lens_and_first_seen(tmp_path):
     card = payload["items"][0]
     assert card["delivery_key"] == f"raw_item:{included}"
     assert card["dedupe_key"] == "url:https://example.com/d"
+    # Lens-generated content is relayed verbatim — never the raw summary.
     assert card["plain_text"] == (
-        "Included\n\nSummary for Included\n\nhttps://example.com/d"
+        "Included\n\n[agent-tech] Lens summary for agent-tech\n\nhttps://example.com/d"
     )
     assert card["markdown"] == (
-        "**Included**\n\nSummary for Included\n\nhttps://example.com/d"
+        "**Included**\n\n[agent-tech] Lens summary for agent-tech\n\nhttps://example.com/d"
     )
     assert card["lens_ids"] == ["agent-tech"]
+    assert card["lenses"][0]["summary"] == "Lens summary for agent-tech"
     assert card["source_type"] == "rss.feed"
+    # Cards are grouped per Lens and carry the verbatim-delivery contract.
+    assert payload["groups"] == [
+        {
+            "lens_id": "agent-tech",
+            "name": "agent-tech",
+            "raw_item_ids": [included],
+            "count": 1,
+        }
+    ]
+    assert "verbatim" in payload["delivery_instruction"]
 
 
 def test_pending_delivery_excludes_already_recorded_raw_items(tmp_path):
@@ -930,3 +942,81 @@ def test_slack_reaction_shape_resolves_default_delivery_thread(tmp_path):
     assert result["ok"] is True
     assert result["action"] == "save_and_promote"
     assert result["raw_item_id"] == raw_item_id
+
+
+def test_lens_bullets_render_verbatim_and_multi_lens_groups(tmp_path):
+    cfg = _cfg(tmp_path)
+    item = _insert_raw_item(
+        cfg,
+        url="https://example.com/bullets",
+        title="Bulleted",
+        subscription_id=None,
+        collected_at="2026-01-06T00:00:00+00:00",
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db(cfg) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO lenses (id, name, description, keywords, enabled, "
+            "created_at, updated_at) VALUES ('ai', 'AI Research', '', '[]', 1, ?, ?)",
+            (now, now),
+        )
+        conn.execute(
+            "INSERT INTO raw_item_lenses (raw_item_id, lens_id, summary, bullets_json) "
+            "VALUES (?, 'ai', 'Key findings', '[\"First point\", \"Second point\"]')",
+            (item,),
+        )
+        conn.commit()
+
+    payload = pending_delivery_payload(cfg, payload_type="raw_item")
+    card = next(c for c in payload["items"] if c["raw_item_id"] == item)
+    assert card["markdown"] == (
+        "**Bulleted**\n\n"
+        "[AI Research] Key findings\n- First point\n- Second point\n\n"
+        "https://example.com/bullets"
+    )
+    assert card["lenses"] == [
+        {
+            "lens_id": "ai",
+            "name": "AI Research",
+            "summary": "Key findings",
+            "bullets": ["First point", "Second point"],
+        }
+    ]
+
+
+def test_unlensed_card_falls_back_to_summary_and_group(tmp_path):
+    cfg = _cfg(tmp_path)
+    item = _insert_raw_item(
+        cfg,
+        url="https://example.com/plain",
+        title="Plain",
+        subscription_id=None,
+        collected_at="2026-01-06T00:00:00+00:00",
+    )
+
+    payload = pending_delivery_payload(cfg, payload_type="raw_item")
+    card = next(c for c in payload["items"] if c["raw_item_id"] == item)
+    assert card["markdown"] == "**Plain**\n\nSummary for Plain\n\nhttps://example.com/plain"
+    assert card["lenses"] == []
+    group = next(g for g in payload["groups"] if g["lens_id"] == "")
+    assert group["name"] == "unlensed"
+    assert item in group["raw_item_ids"]
+
+
+def test_digest_card_carries_full_content_md(tmp_path):
+    cfg = _cfg(tmp_path)
+    long_md = "# Daily Digest\n\n" + ("content line\n" * 200)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db(cfg) as conn:
+        conn.execute(
+            "INSERT INTO digests (title, content_md, item_count, status, sections_json, "
+            "created_at) VALUES ('Daily', ?, 3, 'ok', '[]', ?)",
+            (long_md, now),
+        )
+        conn.commit()
+
+    payload = pending_delivery_payload(cfg, payload_type="digest")
+    card = payload["items"][0]
+    assert card["content_md"] == long_md          # full text, not truncated
+    assert card["markdown"] == long_md            # adapters send this verbatim
+    assert card["summary"] == long_md[:1000]      # back-compat preview
