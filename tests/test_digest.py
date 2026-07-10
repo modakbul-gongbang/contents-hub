@@ -14,8 +14,6 @@ from __future__ import annotations
 import datetime as _dt
 import io
 import json
-import sqlite3
-import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -25,8 +23,6 @@ from contents_hub.cli import main as cli_main
 from contents_hub.config import WikiConfig
 from contents_hub.db import get_db, init_db
 from contents_hub.digest import (
-    build_digest,
-    dispatch_digest,
     run_digest,
 )
 from contents_hub.runners import get_default_runner, set_default_runner

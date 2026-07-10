@@ -14,7 +14,6 @@ and the canonical ``FetchFailureReason`` enum lives in :mod:`contents_hub.models
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 
 import pytest
 
@@ -124,7 +123,6 @@ class TestWebLayerNeedsAuth:
 
     @pytest.fixture
     def client(self, tmp_path, monkeypatch):
-        import sqlite3
         from fastapi.testclient import TestClient
         from contents_hub.config import WikiConfig
         from contents_hub.db import get_db

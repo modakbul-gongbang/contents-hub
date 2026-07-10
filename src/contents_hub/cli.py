@@ -49,6 +49,7 @@ from typing import Any, Sequence
 
 from contents_hub.api import collect_all_active, collect_all_due, fetch_subscription
 from contents_hub.config import load_config
+from contents_hub.db import get_db
 from contents_hub.digest import run_digest
 from contents_hub.models import FetchResult
 from contents_hub.naming import CLI_COMMAND
@@ -1160,7 +1161,6 @@ def _lens_row_to_payload(row) -> dict[str, Any]:
 
 
 def _get_lens_payload(config, lens_id: str) -> dict[str, Any] | None:
-    from contents_hub.db import get_db
 
     with get_db(config) as conn:
         row = conn.execute(
@@ -1179,7 +1179,6 @@ def _emit_lens_payload(ok: bool, payload: dict[str, Any] | None, *, error: str =
 
 
 def _handle_lens_create(config, args) -> int:
-    from contents_hub.db import get_db
 
     try:
         lens_id = _normalize_lens_id(args.lens_id)
@@ -1219,7 +1218,6 @@ def _handle_lens_create(config, args) -> int:
 
 
 def _handle_lens_list(config, args) -> int:
-    from contents_hub.db import get_db
 
     where = ""
     params: tuple[Any, ...] = ()
@@ -1258,7 +1256,6 @@ def _handle_lens_list(config, args) -> int:
 
 
 def _handle_lens_update(config, args) -> int:
-    from contents_hub.db import get_db
 
     try:
         lens_id = _normalize_lens_id(args.lens_id)
@@ -1311,7 +1308,6 @@ def _handle_lens_update(config, args) -> int:
 
 
 def _handle_lens_delete(config, args) -> int:
-    from contents_hub.db import get_db
 
     try:
         lens_id = _normalize_lens_id(args.lens_id)

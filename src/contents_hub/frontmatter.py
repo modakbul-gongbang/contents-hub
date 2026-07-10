@@ -56,7 +56,6 @@ when available and falls back to a simple line-based parser.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -378,10 +377,10 @@ class Frontmatter:
     def add_lenses(self, *new_lenses: str) -> None:
         """Add lenses (deduplicated, order-preserving)."""
         seen = set(self.lenses)
-        for l in new_lenses:
-            if l and l not in seen:
-                self.lenses.append(l)
-                seen.add(l)
+        for lens in new_lenses:
+            if lens and lens not in seen:
+                self.lenses.append(lens)
+                seen.add(lens)
 
     def merge(self, other: dict[str, Any]) -> None:
         """Merge a dict of values into this frontmatter.

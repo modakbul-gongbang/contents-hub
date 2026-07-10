@@ -123,7 +123,7 @@ def test_digests_list_and_detail_render_structured_items(vault, client):
     assert "duplicate markdown link" not in detail.text
     assert "Article One" in detail.text
     assert "https://example.com/one" in detail.text
-    assert f"/raw-items/1/toggle-saved" in detail.text
+    assert "/raw-items/1/toggle-saved" in detail.text
 
 
 def test_saved_toggle_round_trips_from_digest_to_saved_tab(vault, client):

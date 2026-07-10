@@ -24,7 +24,7 @@ a string (per the existing `AgentRunner.run` text-only contract).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 # Type alias for tool handler coroutine functions.

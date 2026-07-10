@@ -12,7 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
@@ -258,8 +257,26 @@ def test_discard_is_noop_for_active_sub(vault, client):
 # ---------------------------------------------------------------------------
 
 
-def test_retry_clears_trial_result_and_reruns(vault, client):
+def test_retry_clears_trial_result_and_reruns(vault, client, monkeypatch):
     sub_id = _seed_validating_sub(vault, with_trial_result=True, trial_ok=False)
+
+    # source_type=webpage runs its trial headed (browser + chromux_navigate),
+    # so stub the chromux launch/cleanup helpers like the LinkedIn test does.
+    monkeypatch.setattr(
+        "contents_hub.web.app._open_chromux",
+        lambda url, *, session=None, confirmed=False: {
+            "status": "opened", "url": url, "previous_state": "headless", "error": None,
+        },
+    )
+    monkeypatch.setattr(
+        "contents_hub.chromux.close_chromux_session",
+        lambda session_id, **kwargs: subprocess.CompletedProcess(
+            ["chromux", "close", session_id], 0
+        ),
+    )
+    monkeypatch.setattr(
+        "contents_hub.chromux.list_chromux_sessions", lambda profile=None: set()
+    )
 
     resp = client.post(f"/subscriptions/{sub_id}/retry_validation")
     assert resp.status_code == 200

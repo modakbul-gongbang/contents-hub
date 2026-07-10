@@ -22,11 +22,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 from contents_hub.config import WikiConfig
+from contents_hub.db import get_db
 from contents_hub.source_types import (
     canonical_source_type,
     default_recipe_config,
@@ -469,7 +469,6 @@ class SubscriptionStore:
         Raises:
             ValueError: If the URL is already subscribed, invalid, or validation fails.
         """
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         if not _is_valid_feed_url(normalized):
@@ -561,7 +560,6 @@ class SubscriptionStore:
         Returns the removed Subscription.
         Raises KeyError if not found.
         """
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         sub = self.get(normalized)
@@ -579,7 +577,6 @@ class SubscriptionStore:
 
         Raises KeyError if not found.
         """
-        from contents_hub.db import get_db
 
         sub = self.get_by_id(sub_id)
         if sub is None:
@@ -593,7 +590,6 @@ class SubscriptionStore:
 
     def get(self, url: str) -> Subscription | None:
         """Get a subscription by URL, or None if not found."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         with get_db(self._config) as conn:
@@ -607,7 +603,6 @@ class SubscriptionStore:
 
     def get_by_id(self, sub_id: str) -> Subscription | None:
         """Get a subscription by ID, or None if not found."""
-        from contents_hub.db import get_db
 
         try:
             id_int = int(sub_id)
@@ -625,7 +620,6 @@ class SubscriptionStore:
 
     def list_all(self) -> list[Subscription]:
         """List all subscriptions, sorted by created_at (newest first)."""
-        from contents_hub.db import get_db
 
         with get_db(self._config) as conn:
             rows = conn.execute(
@@ -635,7 +629,6 @@ class SubscriptionStore:
 
     def list_by_status(self, status: SubscriptionStatus) -> list[Subscription]:
         """List subscriptions filtered by status."""
-        from contents_hub.db import get_db
 
         with get_db(self._config) as conn:
             rows = conn.execute(
@@ -646,7 +639,6 @@ class SubscriptionStore:
 
     def list_by_source_type(self, source_type: str) -> list[Subscription]:
         """List subscriptions filtered by source type."""
-        from contents_hub.db import get_db
 
         canonical = canonical_source_type(source_type)
         with get_db(self._config) as conn:
@@ -663,7 +655,7 @@ class SubscriptionStore:
         lens_lower = lens.lower()
         return [
             s for s in all_subs
-            if lens_lower in [l.lower() for l in s.lenses]
+            if lens_lower in [name.lower() for name in s.lenses]
         ]
 
     def list_by_schedule(self, schedule: str) -> list[Subscription]:
@@ -672,7 +664,6 @@ class SubscriptionStore:
 
     def update_title(self, url: str, title: str) -> None:
         """Update the title of an existing subscription."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         self._require(normalized)
@@ -684,7 +675,6 @@ class SubscriptionStore:
 
     def update_lenses(self, url: str, lenses: list[str]) -> None:
         """Replace the lenses (default_lens_ids) of an existing subscription."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         self._require(normalized)
@@ -696,7 +686,6 @@ class SubscriptionStore:
 
     def update_tags(self, url: str, tags: list[str]) -> None:
         """Update tags — stored in config JSON under 'tags' key."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         sub = self._require(normalized)
@@ -713,7 +702,6 @@ class SubscriptionStore:
         schedule: str | dict | ScheduleConfig,
     ) -> None:
         """Update the collection schedule of a subscription."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         self._require(normalized)
@@ -739,7 +727,6 @@ class SubscriptionStore:
 
     def update_config(self, url: str, config: dict[str, Any]) -> None:
         """Update the type-specific config of a subscription."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         sub = self._require(normalized)
@@ -752,7 +739,6 @@ class SubscriptionStore:
 
     def set_status(self, url: str, status: SubscriptionStatus) -> None:
         """Set the status of a subscription (active/paused/error)."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         self._require(normalized)
@@ -764,7 +750,6 @@ class SubscriptionStore:
 
     def record_fetch(self, url: str, item_count: int, error: str = "") -> None:
         """Record the result of a fetch operation for a subscription."""
-        from contents_hub.db import get_db
 
         normalized = _normalize_feed_url(url)
         sub = self._require(normalized)
@@ -817,7 +802,6 @@ class SubscriptionStore:
     @property
     def count(self) -> int:
         """Number of subscriptions."""
-        from contents_hub.db import get_db
 
         with get_db(self._config) as conn:
             row = conn.execute("SELECT COUNT(*) FROM subscriptions").fetchone()

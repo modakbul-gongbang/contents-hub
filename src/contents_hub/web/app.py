@@ -22,7 +22,9 @@ from contents_hub.chromux import (
     open_chromux_headed as _open_chromux,
 )
 from contents_hub.config import WikiConfig
+from contents_hub.db import get_db
 from contents_hub.source_types import SOURCE_TYPES, source_type_options
+from contents_hub.subscriptions import SubscriptionStatus, SubscriptionStore
 
 logger = logging.getLogger(__name__)
 
@@ -312,7 +314,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         flipped it (ground / confirm_auth as of writing), so it's
         safe to apply uniformly.
         """
-        from contents_hub.db import get_db
 
         try:
             await fetch_subscription(cfg, url)
@@ -482,7 +483,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
-        from contents_hub.db import get_db
 
         msg = request.query_params.get("msg", "")
         cfg = request.app.state.config
@@ -535,7 +535,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.get("/digests", response_class=HTMLResponse)
     async def digests_list(request: Request):
-        from contents_hub.db import get_db
 
         cfg = request.app.state.config
         digests: list[dict] = []
@@ -577,7 +576,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.get("/digests/{digest_id}", response_class=HTMLResponse)
     async def digest_detail(request: Request, digest_id: int):
-        from contents_hub.db import get_db
 
         cfg = request.app.state.config
         selected: dict | None = None
@@ -627,7 +625,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.get("/saved", response_class=HTMLResponse)
     async def saved_items(request: Request):
-        from contents_hub.db import get_db
 
         cfg = request.app.state.config
         items: list[dict] = []
@@ -655,7 +652,6 @@ def create_app(config: WikiConfig) -> FastAPI:
     ):
         import datetime as _dt
 
-        from contents_hub.db import get_db
 
         cfg = request.app.state.config
         try:
@@ -707,7 +703,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.get("/subscriptions", response_class=HTMLResponse)
     async def subscriptions_list(request: Request):
-        from contents_hub.subscriptions import SubscriptionStore
 
         msg = request.query_params.get("msg", "")
         cfg = request.app.state.config
@@ -772,7 +767,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         collection_prompt: str = Form(""),
     ):
         from contents_hub.source_router import classify
-        from contents_hub.subscriptions import SubscriptionStatus, SubscriptionStore
 
         cfg = app.state.config
         store = SubscriptionStore(cfg)
@@ -856,7 +850,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         running fetch.
         """
         from contents_hub.source_router import AUTH_SIGNIN_HOMEPAGES
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -880,7 +873,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         background_tasks: BackgroundTasks,
     ):
         """User confirms they've signed in — kick off baseline fetch."""
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -892,9 +884,7 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.get("/subscriptions/{sub_id}", response_class=HTMLResponse)
     async def subscription_detail(request: Request, sub_id: str):
-        from contents_hub.db import get_db
         from contents_hub.recipes import RecipeRegistry
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1106,7 +1096,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
         from contents_hub.executor import execute_trial as _executor_trial
         from contents_hub.recipes import RecipeRegistry
-        from contents_hub.subscriptions import SubscriptionStore
 
         store = SubscriptionStore(cfg)
         sub = store.get(sub_url)
@@ -1193,9 +1182,7 @@ def create_app(config: WikiConfig) -> FastAPI:
         flip status to active, clear trial state."""
         import datetime as _dt
 
-        from contents_hub.db import get_db
         from contents_hub.item_key import item_key
-        from contents_hub.subscriptions import SubscriptionStatus, SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1258,8 +1245,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         """Reject a validating subscription: delete the sub + its schedules.
         Trial samples live in config JSON (not raw_items), so nothing else
         to clean — the sub delete tears everything down."""
-        from contents_hub.db import get_db
-        from contents_hub.subscriptions import SubscriptionStatus, SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1288,8 +1273,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         background_tasks: BackgroundTasks,
     ):
         """Clear the current trial_result and run another trial fetch."""
-        from contents_hub.db import get_db
-        from contents_hub.subscriptions import SubscriptionStatus, SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1321,8 +1304,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         request: Request,
         background_tasks: BackgroundTasks,
     ):
-        from contents_hub.db import get_db
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1356,8 +1337,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         background_tasks: BackgroundTasks,
     ):
         """Reset to baseline: clear last_fetched_at and trigger a fresh fetch."""
-        from contents_hub.db import get_db
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1385,8 +1364,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         cron: str = Form(""),
         interval: str = Form(""),
     ):
-        from contents_hub.db import get_db
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1442,7 +1419,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.post("/subscriptions/{sub_id}/delete")
     async def subscriptions_delete(sub_id: str):
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = app.state.config
         store = SubscriptionStore(cfg)
@@ -1463,7 +1439,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         request: Request,
         collection_prompt: str = Form(""),
     ):
-        from contents_hub.subscriptions import SubscriptionStore
 
         cfg = request.app.state.config
         store = SubscriptionStore(cfg)
@@ -1495,7 +1470,6 @@ def create_app(config: WikiConfig) -> FastAPI:
     # ------------------------------------------------------------------
 
     def _load_explorations_index(cfg: WikiConfig) -> dict:
-        from contents_hub.db import get_db
 
         lens_options: list[dict] = []
         drafts: list[dict] = []
@@ -1544,7 +1518,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         return {"lens_options": lens_options, "drafts": drafts}
 
     def _load_exploration_detail(exploration_id: int) -> dict | None:
-        from contents_hub.db import get_db
 
         with get_db(config) as conn:
             row = conn.execute(
@@ -1669,7 +1642,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         target_surfaces: list[str] | None = Form(None),
         lens_ids: list[str] | None = Form(None),
     ):
-        from contents_hub.db import get_db
         from contents_hub.explorations import ExplorationStore
 
         cfg = request.app.state.config
@@ -1948,7 +1920,6 @@ def create_app(config: WikiConfig) -> FastAPI:
 
     @app.get("/lens-inbox", response_class=HTMLResponse)
     async def lens_inbox_page(request: Request):
-        from contents_hub.db import get_db
         from contents_hub.lens_inbox import (
             ALLOWED_STATUSES,
             ALLOWED_VIEW_MODES,
@@ -2016,7 +1987,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         ``html`` field carries the rendered region partial so the client can
         drop it into ``#li-region`` without re-implementing the template.
         """
-        from contents_hub.db import get_db
         from contents_hub.lens_inbox import query_lens_inbox
 
         cfg = request.app.state.config
@@ -2081,7 +2051,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         """
         import datetime as _dt
 
-        from contents_hub.db import get_db
 
         cfg = request.app.state.config
         try:
@@ -2139,7 +2108,6 @@ def create_app(config: WikiConfig) -> FastAPI:
         """
         import datetime as _dt
 
-        from contents_hub.db import get_db
 
         cfg = request.app.state.config
         try:
