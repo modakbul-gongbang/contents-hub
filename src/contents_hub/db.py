@@ -20,7 +20,7 @@ from contents_hub.timeutil import now_iso
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -268,6 +268,26 @@ CREATE TABLE IF NOT EXISTS job_runs (
     items_error     INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS item_signals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    raw_item_id     INTEGER NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+    signal          TEXT NOT NULL,                        -- impression/open/read/save/promote/archive/unsave/note
+    source          TEXT NOT NULL DEFAULT '',             -- web/cli/slack/discord/telegram/agent/backfill
+    dedup_key       TEXT NOT NULL DEFAULT '',             -- idempotency key; '' disables dedup
+    metadata_json   TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS item_embeddings (
+    raw_item_id     INTEGER NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+    model           TEXT NOT NULL,
+    dim             INTEGER NOT NULL,
+    vector          BLOB NOT NULL,                        -- float32 array, little-endian
+    text_hash       TEXT NOT NULL DEFAULT '',             -- sha256 of embedded text (incremental re-embeds)
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (raw_item_id, model)
+);
+
 CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at)
     WHERE enabled = 1;
 CREATE INDEX IF NOT EXISTS idx_schedules_url ON schedules(subscription_url);
@@ -314,6 +334,13 @@ CREATE INDEX IF NOT EXISTS idx_exploration_runs_owner ON exploration_runs(explor
 CREATE INDEX IF NOT EXISTS idx_exploration_runs_strategy
     ON exploration_runs(strategy_version_id);
 CREATE INDEX IF NOT EXISTS idx_job_runs_status ON job_runs(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_item_signals_dedup
+    ON item_signals(raw_item_id, signal, dedup_key)
+    WHERE dedup_key != '';
+CREATE INDEX IF NOT EXISTS idx_item_signals_item
+    ON item_signals(raw_item_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_item_signals_created_at
+    ON item_signals(created_at);
 """
 
 # Migration from v4 → v5: add `running` flag to schedules
@@ -567,6 +594,71 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_interaction_events_event_id
     WHERE event_id != '';
 """
 
+# Migration from v14 → v15: engagement signal ledger + optional embeddings
+_MIGRATION_V15_SQL = """\
+CREATE TABLE IF NOT EXISTS item_signals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    raw_item_id     INTEGER NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+    signal          TEXT NOT NULL,
+    source          TEXT NOT NULL DEFAULT '',
+    dedup_key       TEXT NOT NULL DEFAULT '',
+    metadata_json   TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS item_embeddings (
+    raw_item_id     INTEGER NOT NULL REFERENCES raw_items(id) ON DELETE CASCADE,
+    model           TEXT NOT NULL,
+    dim             INTEGER NOT NULL,
+    vector          BLOB NOT NULL,
+    text_hash       TEXT NOT NULL DEFAULT '',
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (raw_item_id, model)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_item_signals_dedup
+    ON item_signals(raw_item_id, signal, dedup_key)
+    WHERE dedup_key != '';
+CREATE INDEX IF NOT EXISTS idx_item_signals_item
+    ON item_signals(raw_item_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_item_signals_created_at
+    ON item_signals(created_at);
+"""
+
+
+def _backfill_item_signals(conn: sqlite3.Connection) -> None:
+    """Seed item_signals from current state tables (v15 backfill).
+
+    State tables are the deduplicated truth, so only they are used —
+    replaying interaction_events as well would double-count saves.
+    INSERT OR IGNORE + the dedup unique index make re-runs no-ops.
+    """
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO item_signals
+            (raw_item_id, signal, source, dedup_key, created_at)
+        SELECT raw_item_id, 'save', 'backfill', 'backfill:saved_items', saved_at
+        FROM saved_items
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO item_signals
+            (raw_item_id, signal, source, dedup_key, created_at)
+        SELECT id, 'promote', 'backfill', 'backfill:status', updated_at
+        FROM raw_items WHERE status = 'promoted'
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO item_signals
+            (raw_item_id, signal, source, dedup_key, created_at)
+        SELECT id, 'archive', 'backfill', 'backfill:status', updated_at
+        FROM raw_items WHERE status = 'archived'
+        """
+    )
+
+
 # Migration from v1 → v2: add fetch_cursors table
 _MIGRATION_V2_SQL = """\
 CREATE TABLE IF NOT EXISTS fetch_cursors (
@@ -727,6 +819,7 @@ _MIGRATIONS: tuple[tuple[int, str, bool, str], ...] = (
     (13, _MIGRATION_V13_SQL, False,
      "digest section items, saved items, digest titles"),
     (14, _MIGRATION_V14_SQL, False, "outbound messages and interaction events"),
+    (15, _MIGRATION_V15_SQL, False, "item signals ledger and embeddings"),
 )
 
 # Indexes over migration-added columns; created after the ladder so they
@@ -780,6 +873,8 @@ def _run_migrations(conn: sqlite3.Connection, current_version: int) -> int:
                 raise
         if version == 14:
             _migrate_existing_telegram_mappings(conn)
+        if version == 15:
+            _backfill_item_signals(conn)
         current_version = version
         logger.info("Migrated database to v%d (%s)", version, label)
     return current_version

@@ -645,6 +645,34 @@ def create_app(config: WikiConfig) -> FastAPI:
             },
         )
 
+    @app.get("/r/{item_id}")
+    async def raw_item_open_redirect(item_id: int, request: Request):
+        """Record an ``open`` engagement signal, then redirect to the item URL.
+
+        Item links in the dashboard route through here so link clicks feed
+        the knowledge-store ranking (same-day repeats dedup to one signal).
+        """
+        from contents_hub.signals import record_signal_conn
+
+        cfg = request.app.state.config
+        with get_db(cfg) as conn:
+            row = conn.execute(
+                "SELECT url FROM raw_items WHERE id = ?", (item_id,)
+            ).fetchone()
+            url = (row["url"] if row else "") or ""
+            if not url or url.startswith("content://"):
+                raise HTTPException(status_code=404, detail="Raw item has no external URL")
+            stamp = now_iso()
+            record_signal_conn(
+                conn,
+                raw_item_id=item_id,
+                signal="open",
+                source="web",
+                dedup_key=f"web:{stamp[:10]}",
+                created_at=stamp,
+            )
+        return RedirectResponse(url=url, status_code=302)
+
     @app.post("/raw-items/{item_id}/toggle-saved")
     async def raw_item_toggle_saved(
         item_id: int,
@@ -678,6 +706,14 @@ def create_app(config: WikiConfig) -> FastAPI:
                         (item_id, now_iso()),
                     )
                     saved = True
+                from contents_hub.signals import record_signal_conn
+
+                record_signal_conn(
+                    conn,
+                    raw_item_id=item_id,
+                    signal="save" if saved else "unsave",
+                    source="web",
+                )
         except HTTPException:
             raise
         except Exception as exc:

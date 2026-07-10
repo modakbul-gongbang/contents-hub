@@ -11,6 +11,7 @@ from typing import Any
 from contents_hub.config import WikiConfig
 from contents_hub.db import get_db
 from contents_hub.promote import PromoteError, promote_raw_item, source_filename
+from contents_hub.signals import record_signal_conn
 from contents_hub.timeutil import now_iso
 
 
@@ -23,6 +24,43 @@ DEFAULT_REACTION_RULES = {
     "✅": "mark_read",
     "🗑": "archive",
 }
+
+# Slack (and Discord custom-emoji) events carry reaction *names* rather than
+# emoji characters. Map the common names onto the emoji rule table so the
+# same rules work on every platform.
+REACTION_NAME_ALIASES = {
+    "+1": "👍",
+    "thumbsup": "👍",
+    "thumbs_up": "👍",
+    "star": "⭐",
+    "star2": "⭐",
+    "heart": "❤️",
+    "heavy_black_heart": "❤",
+    "white_check_mark": "✅",
+    "heavy_check_mark": "✅",
+    "ballot_box_with_check": "✅",
+    "wastebasket": "🗑",
+    "put_litter_in_its_place": "🗑",
+}
+
+_VARIATION_SELECTOR = "️"
+
+
+def _normalize_reaction(value: str) -> str:
+    """Normalize a reaction value: strip :colons:, map names, drop U+FE0F."""
+    token = str(value or "").strip().strip(":")
+    token = REACTION_NAME_ALIASES.get(token.lower(), token)
+    return token.replace(_VARIATION_SELECTOR, "")
+
+
+_NORMALIZED_REACTION_RULES = {
+    _normalize_reaction(key): action for key, action in DEFAULT_REACTION_RULES.items()
+}
+
+
+def resolve_reaction_action(value: str) -> str:
+    """Return the action for a reaction value/name, or '' when unmapped."""
+    return _NORMALIZED_REACTION_RULES.get(_normalize_reaction(value), "")
 
 
 @dataclass(frozen=True)
@@ -79,7 +117,11 @@ def normalize_interaction_event(data: dict[str, Any]) -> NormalizedInteraction:
 
 
 def interaction_rules_payload() -> dict[str, Any]:
-    return {"ok": True, "rules": dict(DEFAULT_REACTION_RULES)}
+    return {
+        "ok": True,
+        "rules": dict(DEFAULT_REACTION_RULES),
+        "name_aliases": dict(REACTION_NAME_ALIASES),
+    }
 
 
 def record_outbound_message(
@@ -141,6 +183,16 @@ def record_outbound_message(
                 created_at or _now(),
             ),
         )
+        if raw_item_id is not None:
+            # Exposure signal for the engagement ledger; the outbound key
+            # makes re-recording the same message replay-safe.
+            record_signal_conn(
+                conn,
+                raw_item_id=int(raw_item_id),
+                signal="impression",
+                source=platform,
+                dedup_key=f"om:{workspace_id}:{channel_id}:{thread_id}:{message_id}",
+            )
         row = conn.execute(
             """
             SELECT * FROM outbound_messages
@@ -377,6 +429,41 @@ def _handle_action(
     return {"ok": False, "status": "ignored", "noop": True, "error": "unsupported_action"}
 
 
+_ACTION_SIGNALS = {
+    "save": ("save",),
+    "save_and_promote": ("save",),
+    "mark_read": ("read",),
+    "archive": ("archive",),
+}
+
+
+def _record_action_signals(
+    conn: sqlite3.Connection,
+    *,
+    event: NormalizedInteraction,
+    action: str,
+    raw_item_id: int,
+    promoted: bool,
+) -> None:
+    """Mirror a handled interaction into the engagement signal ledger.
+
+    The dedup key reuses the platform event id when present, otherwise the
+    message+reaction pair, so replays never double-count.
+    """
+    dedup_base = event.event_id or f"{event.message_id}:{event.value}"
+    signals = list(_ACTION_SIGNALS.get(action, ()))
+    if promoted:
+        signals.append("promote")
+    for signal in signals:
+        record_signal_conn(
+            conn,
+            raw_item_id=raw_item_id,
+            signal=signal,
+            source=event.platform,
+            dedup_key=f"ie:{dedup_base}",
+        )
+
+
 def handle_interaction(config: WikiConfig, data: dict[str, Any]) -> dict[str, Any]:
     """Log and handle one normalized interaction event."""
     event = normalize_interaction_event(data)
@@ -385,9 +472,7 @@ def handle_interaction(config: WikiConfig, data: dict[str, Any]) -> dict[str, An
     if not event.message_id:
         raise ValueError("message_id is required")
 
-    action = DEFAULT_REACTION_RULES.get(event.value) if event.kind == "reaction" else None
-    if not action:
-        action = ""
+    action = resolve_reaction_action(event.value) if event.kind == "reaction" else ""
 
     with get_db(config) as conn:
         existing = _existing_event(conn, event)
@@ -427,6 +512,14 @@ def handle_interaction(config: WikiConfig, data: dict[str, Any]) -> dict[str, An
         raw_item_id = outbound["raw_item_id"]
         result = _handle_action(config, conn, action=action, raw_item_id=raw_item_id)
         _update_event_status(conn, event_row_id, action=action, status=str(result.get("status") or "handled"))
+        if result.get("ok") and raw_item_id is not None:
+            _record_action_signals(
+                conn,
+                event=event,
+                action=action,
+                raw_item_id=int(raw_item_id),
+                promoted=bool(result.get("promoted")),
+            )
         conn.commit()
 
     return {

@@ -304,6 +304,67 @@ def _add_deliver_payload_args(parser) -> None:
     )
 
 
+def _build_item_parser(sub_parsers) -> None:
+    """``item {open,signal,signals}`` — engagement signal ledger access."""
+    item_p = sub_parsers.add_parser("item", help="Record and inspect item engagement signals")
+    item_sub = item_p.add_subparsers(dest="item_command", required=True)
+
+    open_p = item_sub.add_parser("open", help="Record an open signal and launch the item URL")
+    open_p.add_argument("id_or_url", help="Raw item id or URL")
+    open_p.add_argument("--source", default="cli", help="Signal source label (default: cli)")
+    open_p.add_argument("--no-launch", action="store_true", help="Record only; do not open a browser")
+    open_p.add_argument("--format", dest="output_format", default="json", choices=["json"])
+
+    signal_p = item_sub.add_parser("signal", help="Record one engagement signal")
+    signal_p.add_argument("id_or_url", help="Raw item id or URL")
+    signal_p.add_argument(
+        "--signal",
+        required=True,
+        choices=["impression", "open", "read", "save", "promote", "note", "unsave", "archive"],
+    )
+    signal_p.add_argument("--source", default="cli")
+    signal_p.add_argument("--dedup-key", default="", help="Idempotency key ('' = always insert)")
+    signal_p.add_argument("--metadata", default="", help="JSON object with signal context")
+    signal_p.add_argument("--format", dest="output_format", default="json", choices=["json"])
+
+    signals_p = item_sub.add_parser("signals", help="Show an item's signal ledger and engagement score")
+    signals_p.add_argument("id_or_url", help="Raw item id or URL")
+    signals_p.add_argument("--format", dest="output_format", default="json", choices=["json"])
+
+
+def _build_query_parser(sub_parsers) -> None:
+    """``query`` — knowledge-store search with engagement-aware ranking."""
+    query_p = sub_parsers.add_parser(
+        "query",
+        help="Search collected items (keyword + optional semantic + engagement ranking)",
+    )
+    query_p.add_argument("text", help="Query text")
+    query_p.add_argument("--limit", type=int, default=10)
+    query_p.add_argument("--since", default=None, help="Recency window, e.g. 90d, 4w, 12h")
+    query_p.add_argument("--lens", default=None, help="Only items matched to this Lens id")
+    query_p.add_argument("--saved-only", action="store_true", help="Only saved items")
+    query_p.add_argument("--explain", action="store_true", help="Include per-ranker score contributions")
+    query_p.add_argument(
+        "--context",
+        action="store_true",
+        help="Emit a markdown context pack instead of JSON",
+    )
+    query_p.add_argument("--format", dest="output_format", default="json", choices=["json"])
+
+
+def _build_index_parser(sub_parsers) -> None:
+    """``index`` — build/refresh the FTS index and embedding vectors."""
+    index_p = sub_parsers.add_parser("index", help="Build the query index (FTS + optional embeddings)")
+    index_p.add_argument("--rebuild-fts", action="store_true", help="Rebuild the FTS index from scratch")
+    index_p.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Embed items missing vectors (requires CONTENTS_HUB_EMBEDDINGS)",
+    )
+    index_p.add_argument("--batch-size", type=int, default=32)
+    index_p.add_argument("--format", dest="output_format", default="json", choices=["json"])
+
+
 def _build_raw_parser(sub_parsers) -> None:
     """``raw add`` — manual raw item insertion for ad-hoc reading queues."""
     raw_p = sub_parsers.add_parser("raw", help="Manage manually added raw items")
@@ -512,6 +573,9 @@ def build_parser() -> argparse.ArgumentParser:
     _build_delivery_parser(sub)
     _build_interaction_parser(sub)
     _build_deliver_parser(sub)
+    _build_item_parser(sub)
+    _build_query_parser(sub)
+    _build_index_parser(sub)
     return parser
 
 
@@ -1466,6 +1530,87 @@ def _handle_interaction(config, args) -> int:
     return 0 if bool(payload.get("ok")) else 1
 
 
+def _handle_item(config, args) -> int:
+    from contents_hub.signals import open_item, record_signal, signals_payload
+
+    try:
+        if args.item_command == "open":
+            payload = open_item(
+                config,
+                args.id_or_url,
+                source=getattr(args, "source", "cli") or "cli",
+                launch=not bool(getattr(args, "no_launch", False)),
+            )
+        elif args.item_command == "signal":
+            metadata_raw = (getattr(args, "metadata", "") or "").strip()
+            metadata: dict[str, Any] | None = None
+            if metadata_raw:
+                parsed = json.loads(metadata_raw)
+                if not isinstance(parsed, dict):
+                    raise ValueError("--metadata must be a JSON object")
+                metadata = parsed
+            payload = record_signal(
+                config,
+                id_or_url=args.id_or_url,
+                signal=args.signal,
+                source=getattr(args, "source", "cli") or "cli",
+                dedup_key=getattr(args, "dedup_key", "") or "",
+                metadata=metadata,
+            )
+        elif args.item_command == "signals":
+            payload = signals_payload(config, args.id_or_url)
+        else:
+            payload = {"ok": False, "error": "unknown item command"}
+    except Exception as exc:  # noqa: BLE001 - CLI failure surface
+        _emit_json({"ok": False, "error": str(exc)})
+        return 1
+
+    _emit_json(payload)
+    return 0 if bool(payload.get("ok")) else 1
+
+
+def _handle_query(config, args) -> int:
+    from contents_hub.query import context_pack, query_items
+
+    try:
+        payload = query_items(
+            config,
+            args.text,
+            limit=int(getattr(args, "limit", 10) or 10),
+            since=getattr(args, "since", None),
+            lens=getattr(args, "lens", None),
+            saved_only=bool(getattr(args, "saved_only", False)),
+            explain=bool(getattr(args, "explain", False)),
+        )
+    except Exception as exc:  # noqa: BLE001 - CLI failure surface
+        _emit_json({"ok": False, "error": str(exc)})
+        return 1
+
+    if bool(getattr(args, "context", False)):
+        print(context_pack(payload), end="")
+        return 0 if bool(payload.get("ok")) else 1
+    _emit_json(payload)
+    return 0 if bool(payload.get("ok")) else 1
+
+
+def _handle_index(config, args) -> int:
+    from contents_hub.query import build_index
+
+    try:
+        payload = build_index(
+            config,
+            rebuild_fts_index=bool(getattr(args, "rebuild_fts", False)),
+            backfill_embeddings=bool(getattr(args, "backfill", False)),
+            batch_size=int(getattr(args, "batch_size", 32) or 32),
+        )
+    except Exception as exc:  # noqa: BLE001 - CLI failure surface
+        _emit_json({"ok": False, "error": str(exc)})
+        return 1
+
+    _emit_json(payload)
+    return 0 if bool(payload.get("ok")) else 1
+
+
 def _handle_deliver(config, args) -> int:
     from contents_hub.delivery import pending_delivery_payload, prepare_delivery_payload
 
@@ -1809,6 +1954,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _handle_delivery(config, args)
     if args.command == "interaction":
         return _handle_interaction(config, args)
+    if args.command == "item":
+        return _handle_item(config, args)
+    if args.command == "query":
+        return _handle_query(config, args)
+    if args.command == "index":
+        return _handle_index(config, args)
     if args.command == "deliver":
         return _handle_deliver(config, args)
     if args.command == "daemon":

@@ -9,7 +9,7 @@ import pytest
 from contents_hub.channels import FakeAdapter, normalize_discord_event, normalize_slack_event
 from contents_hub.cli import build_parser, main as cli_main
 from contents_hub.config import WikiConfig
-from contents_hub.db import get_db, init_db
+from contents_hub.db import SCHEMA_VERSION, get_db, init_db
 from contents_hub.delivery import pending_delivery_payload, prepare_delivery_payload
 from contents_hub.interactions import handle_interaction, record_outbound_message
 from contents_hub.promote import promote_raw_item
@@ -124,7 +124,7 @@ def test_schema_v14_adds_delivery_and_interaction_tables(tmp_path):
             ).fetchall()
         }
 
-    assert version == 14
+    assert version == SCHEMA_VERSION
     assert {"outbound_messages", "interaction_events"}.issubset(tables)
 
 

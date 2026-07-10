@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 from contents_hub.config import WikiConfig
-from contents_hub.db import get_db, init_db
+from contents_hub.db import SCHEMA_VERSION, get_db, init_db
 from contents_hub import explorations as explorations_module
 from contents_hub.explorations import (
     ARTIFACTS_DIRNAME,
@@ -1091,7 +1091,7 @@ def test_v8_database_migrates_to_exploration_schema(tmp_path):
     migrated = init_db(cfg)
     try:
         assert (
-            migrated.execute("SELECT version FROM schema_version").fetchone()[0] == 14
+            migrated.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
         )
         tables = {
             row[0]
