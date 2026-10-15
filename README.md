@@ -121,6 +121,21 @@ uv tool install -e .
 contents-hub --vault ~/contents-vault sub list
 ```
 
+## Browser Collection With Aside
+
+Use your local Aside browser's signed-in sessions for X, LinkedIn, and webpages.
+Install the [Aside CLI](https://docs.aside.com/help/developers), open Aside, and sign in to the source sites there.
+No Claude SDK or Python extra is needed.
+
+```bash
+CONTENTS_HUB_AGENT_RUNNER=aside uv run contents-hub --vault ~/contents-vault fetch-all
+```
+
+The existing LIST, deduplication, content extraction, and SQLite persistence pipeline remains in charge.
+Aside collection uses the local browser account and model selected in Aside.
+Text-only Lenses and digests use the existing deterministic fallback; exploration tools require `claude-sdk`.
+See [Aside setup, limits, and troubleshooting](docs/aside.md).
+
 ## Agent-First Install
 
 The recommended path is to install the single `contents-hub` skill in your

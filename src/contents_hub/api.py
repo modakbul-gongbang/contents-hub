@@ -63,6 +63,7 @@ from contents_hub.executor import (
 from contents_hub.item_key import normalize_url
 from contents_hub.models import FetchFailureReason, FetchResult, ListItem, infer_from_error
 from contents_hub.recipes import RecipeRegistry
+from contents_hub.runners import get_browser_backend
 from contents_hub.subscriptions import Subscription, SubscriptionStore
 from contents_hub.tools.storage import persist_raw
 
@@ -442,6 +443,8 @@ async def _incremental_executor_execute(
 
 
 def _subscription_uses_chromux(sub: Subscription) -> bool:
+    if get_browser_backend() == "aside":
+        return False
     meta = RecipeRegistry.get_recipe_metadata(sub)
     capabilities = set(meta.get("capabilities") or [])
     fetch_method = meta.get("fetch_method") or (getattr(sub, "config", None) or {}).get("fetch_method")

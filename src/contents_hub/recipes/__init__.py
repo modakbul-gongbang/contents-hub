@@ -224,6 +224,36 @@ class RecipeRegistry:
             raise FileNotFoundError(f"Template not found: {path}")
         return content
 
+    @staticmethod
+    def render_prompt(name: str, *, browser_backend: str = "chromux", **fields: Any) -> str:
+        """Render transport instructions separately from source collection rules.
+
+        Aside's agent uses its native browser tools. Recipe tool names are
+        translated as operation hints; contents-hub still owns all persistence.
+        Subscription overrides receive the same translation as seed recipes.
+        """
+        if browser_backend not in {"chromux", "aside"}:
+            raise ValueError("Unsupported browser backend")
+        instructions = RecipeRegistry.get_template(f"browser_{browser_backend}")
+        template = RecipeRegistry.get_template(name).replace(
+            "{browser_instructions}", instructions,
+        )
+        if browser_backend == "aside":
+            recipe = fields["recipe"]
+            for old, new in (
+                ("chromux_scroll_extract", "browser_scroll_extract"),
+                ("chromux_navigate", "browser_navigate"),
+                ("chromux_extract", "browser_extract"),
+                ("chromux_scroll", "browser_scroll"),
+                ("extract_metadata", "browser_metadata"),
+                ("persist_raw", "caller_owned_storage_do_not_call"),
+                ("`contents-hub` chromux 프로필", "Aside 브라우저"),
+                ("contents-hub chromux 프로필", "Aside 브라우저"),
+            ):
+                recipe = recipe.replace(old, new)
+            fields["recipe"] = recipe
+        return template.format(**fields)
+
 
 def _get_config(subscription: Any) -> dict[str, Any]:
     config = getattr(subscription, "config", None)

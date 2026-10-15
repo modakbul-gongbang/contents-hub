@@ -28,7 +28,7 @@ from contents_hub.config import WikiConfig
 from contents_hub.db import get_db
 from contents_hub.item_key import item_key
 from contents_hub.models import FetchedItem
-from contents_hub.runners import AgentRunner, get_default_runner
+from contents_hub.runners import AgentRunError, AgentRunner, get_browser_backend, get_default_runner
 
 
 ARTIFACTS_DIRNAME = "exploration-artifacts"
@@ -184,6 +184,11 @@ class ExplorationStrategyRunner:
         previous_registry = get_default_registry()
         set_default_registry(registry)
         try:
+            if get_browser_backend(runner) == "aside":
+                raise AgentRunError(
+                    "Aside supports subscription collection only. "
+                    "Select CONTENTS_HUB_AGENT_RUNNER=claude-sdk for exploration tools."
+                )
             chromux_profile = resolve_chromux_profile()
             with chromux_profile_override(chromux_profile):
                 async with chromux_fetch_session_cleanup(

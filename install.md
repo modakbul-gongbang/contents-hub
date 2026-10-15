@@ -119,8 +119,17 @@ uv tool update-shell
 contents-hub --help
 ```
 
-The base install is runtime-neutral. For local development or Claude-backed
-browser/agent features, install optional extras explicitly:
+The base install is runtime-neutral.
+For browser subscription collection with local Aside, install its CLI, open the browser, and sign in to the source sites:
+
+```bash
+aside --version
+CONTENTS_HUB_AGENT_RUNNER=aside contents-hub --vault ~/contents-vault fetch-all
+```
+
+No Python extra is needed for Aside.
+See [Aside setup and limits](docs/aside.md).
+For local development or Claude-backed browser/agent features, install optional extras explicitly:
 
 ```bash
 uv sync --extra claude --extra dev

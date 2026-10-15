@@ -19,7 +19,16 @@ contents-hub --help
 python -m contents_hub --help
 ```
 
-Claude-backed browser/agent features are optional:
+For local Aside browser subscription collection, install its CLI, open Aside, and sign in to the sites you want to collect.
+The base Python install is sufficient:
+
+```bash
+aside --version
+CONTENTS_HUB_AGENT_RUNNER=aside contents-hub --vault ~/contents-vault fetch-all
+```
+
+See [Aside setup](aside.md), including browser login and supported CLI requirements.
+Claude-backed browser/agent features are also optional:
 
 ```bash
 uv sync --extra claude --extra dev

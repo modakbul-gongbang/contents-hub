@@ -115,7 +115,10 @@ instead of becoming mandatory runtime dependencies.
   runner and returns actionable errors for agent-only features.
 - `contents_hub.runners.claude_sdk.ClaudeSDKRunner` is optional and must only be
   imported through the runner selection path or direct optional usage.
-- `CONTENTS_HUB_AGENT_RUNNER=none|claude-sdk` selects the default runner.
+- `contents_hub.runners.aside.AsideRunner` uses the local Aside CLI for subscription collection without provider SDKs.
+- `CONTENTS_HUB_AGENT_RUNNER=none|claude-sdk|aside` selects the default runner.
+- Aside owns its browser session lifecycle through a one-shot supervisor; never run chromux preparation for Aside collection.
+- Aside text synthesis uses deterministic fallbacks; custom exploration tools require `claude-sdk`.
 
 Do not import provider SDKs outside optional runner modules. Core imports should
 work after `uv sync` without optional extras.

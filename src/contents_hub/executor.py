@@ -42,7 +42,7 @@ from contents_hub.platform_lists import (
     list_x_profile_items,
 )
 from contents_hub.recipes import RecipeRegistry
-from contents_hub.runners import AgentRunner, get_default_runner
+from contents_hub.runners import AgentRunner, get_browser_backend, get_default_runner
 
 logger = logging.getLogger(__name__)
 
@@ -1677,7 +1677,7 @@ async def list_items(
             sub_url,
         )
 
-    if is_linkedin_profile_source(source_type, sub_url):
+    if is_linkedin_profile_source(source_type, sub_url) and get_browser_backend(runner) != "aside":
         direct_result = await _list_linkedin_profile_items(sub_url)
         if direct_result is not None:
             return direct_result
@@ -1686,7 +1686,7 @@ async def list_items(
             sub_url,
         )
 
-    if is_x_profile_source(source_type, sub_url):
+    if is_x_profile_source(source_type, sub_url) and get_browser_backend(runner) != "aside":
         direct_result = await _list_x_profile_items(sub_url)
         if direct_result is not None:
             return direct_result
@@ -1696,7 +1696,8 @@ async def list_items(
         )
 
     runner = runner if runner is not None else get_default_runner()
-    prompt = RecipeRegistry.get_template("list_prompt").format(
+    prompt = RecipeRegistry.render_prompt(
+        "list_prompt", browser_backend=get_browser_backend(runner),
         url=sub_url,
         source_type=source_type,
         recipe=recipe,
@@ -1906,7 +1907,8 @@ async def content_items(
         ],
         ensure_ascii=False,
     )
-    prompt = RecipeRegistry.get_template("detail_prompt").format(
+    prompt = RecipeRegistry.render_prompt(
+        "detail_prompt", browser_backend=get_browser_backend(runner),
         url=sub_url,
         source_type=source_type,
         recipe=recipe,
@@ -1963,7 +1965,8 @@ async def _run_execute(
     max_items: int,
     fetch_method: str,
 ) -> FetchResult:
-    prompt = RecipeRegistry.get_template("execute_prompt").format(
+    prompt = RecipeRegistry.render_prompt(
+        "execute_prompt", browser_backend=get_browser_backend(runner),
         url=sub_url,
         source_type=source_type,
         recipe=recipe,
@@ -2139,7 +2142,8 @@ async def execute_trial(
         )
 
     # --- Pass 1: LIST ---
-    list_prompt = RecipeRegistry.get_template("list_prompt").format(
+    list_prompt = RecipeRegistry.render_prompt(
+        "list_prompt", browser_backend=get_browser_backend(runner),
         url=sub_url,
         source_type=source_type,
         recipe=recipe,
@@ -2190,7 +2194,8 @@ async def execute_trial(
     )
 
     # --- Pass 2: DETAIL ---
-    detail_prompt = RecipeRegistry.get_template("detail_prompt").format(
+    detail_prompt = RecipeRegistry.render_prompt(
+        "detail_prompt", browser_backend=get_browser_backend(runner),
         url=sub_url,
         source_type=source_type,
         recipe=recipe,
