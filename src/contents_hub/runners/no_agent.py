@@ -17,6 +17,8 @@ class NoAgentRunner:
     ) -> str:
         raise AgentRunError(
             "Agent-backed collection or synthesis requires an optional runner. "
-            "Install the Claude extra and set CONTENTS_HUB_AGENT_RUNNER=claude-sdk, "
+            "For browser collection, install Aside and set CONTENTS_HUB_AGENT_RUNNER=aside. "
+            "For synthesis or exploration, install the Claude extra and set "
+            "CONTENTS_HUB_AGENT_RUNNER=claude-sdk, "
             "or use deterministic HTTP/RSS/raw/dashboard flows."
         )

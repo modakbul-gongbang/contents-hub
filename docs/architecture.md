@@ -34,6 +34,12 @@ Deterministic sources should use HTTP/RSS paths. Browser or agent-backed
 collection should use the `AgentRunner` protocol and the selected optional
 runner.
 
+The `aside` runner invokes a local CLI through a one-shot owned supervisor.
+The supervisor reads structured assistant events and releases its CLI process, temporary event file, and owned browser session on success, failure, timeout, cancellation, or owner input EOF.
+Browser prompts select backend instructions separately from shared source recipes.
+Aside selection bypasses chromux preparation and social-platform direct DOM collection, while deterministic HTTP/feed paths and LIST, DIFF, CONTENT, and persistence stay in place.
+Aside does not expose contents-hub's custom persistence tools; text synthesis uses deterministic fallbacks and autonomous exploration reports an unsupported-runner error.
+
 ## 3. Delivery And Interaction
 
 `deliver pending` emits adapter-ready cards. Channel adapters send cards and

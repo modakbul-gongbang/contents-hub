@@ -203,6 +203,10 @@ contents-hub daemon uninstall
 
 ## Browser Profile
 
+With `CONTENTS_HUB_AGENT_RUNNER=aside`, use the user's local Aside browser and sign in to the source sites there.
+The `browser open`, `browser status`, and `browser kill` commands manage chromux only and do not manage Aside.
+Do not open a second browser profile to fix an Aside authentication failure.
+
 For login-required browser-backed sources, open the dedicated contents-hub
 browser profile and let the user sign in manually:
 
@@ -419,6 +423,21 @@ Default runtime-neutral behavior:
 ```bash
 CONTENTS_HUB_AGENT_RUNNER=none contents-hub fetch-all
 ```
+
+For browser subscription collection through the local signed-in Aside browser:
+
+```bash
+aside --version
+CONTENTS_HUB_AGENT_RUNNER=aside contents-hub fetch-all --concurrency 3
+```
+
+Aside needs no Python extra or Claude SDK.
+The CLI must support `exec --log-dump`, `session stop`, and `session delete`; the event contract was verified with version 1.26.916.1741.
+Collection retains LIST, DIFF, CONTENT, and SQLite persistence, and closes the owned session after each call.
+The adapter caps concurrent runs at three, execution at 600 seconds per call, and enforces assistant turn budgets from CLI events.
+Text-only Lenses and digests use deterministic fallbacks; autonomous exploration with custom tools requires `claude-sdk`.
+For `login_required`, ask the user to sign in in Aside and retry; do not install Claude as an automatic fallback.
+See `docs/aside.md` for detailed setup and recovery.
 
 Claude-backed features require the optional extra and explicit runner selection:
 

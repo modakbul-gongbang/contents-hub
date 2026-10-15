@@ -36,6 +36,17 @@ The base install is runtime-neutral:
 CONTENTS_HUB_AGENT_RUNNER=none
 ```
 
+Local Aside browser subscription collection needs the base install and a signed-in Aside browser:
+
+```bash
+CONTENTS_HUB_AGENT_RUNNER=aside
+```
+
+This path supports subscription collection through `fetch`, `fetch-all`, `tick`, and collection-driven delivery.
+It uses Aside's browser sessions, keeps deterministic HTTP/feed paths, and requires no Claude SDK.
+Text synthesis uses deterministic fallbacks; autonomous explorations require the Claude runner.
+See [Aside](aside.md) for requirements, resource limits, and recovery.
+
 Agent-backed collection or synthesis uses an optional runner:
 
 ```bash

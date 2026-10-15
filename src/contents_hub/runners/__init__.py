@@ -25,6 +25,14 @@ def _build_runner(*, text_only: bool = False) -> AgentRunner:
     name = _selected_runner_name()
     if name in {"", "none", "off", "disabled"}:
         return NoAgentRunner()
+    if name == "aside":
+        # Aside is a browser collection backend. Keep text synthesis on the
+        # existing deterministic fallback instead of opening browser sessions.
+        if text_only:
+            return NoAgentRunner()
+        from contents_hub.runners.aside import AsideRunner
+
+        return AsideRunner()
     if name == "claude-sdk":
         try:
             from contents_hub.runners.claude_sdk import ClaudeSDKRunner
@@ -35,7 +43,7 @@ def _build_runner(*, text_only: bool = False) -> AgentRunner:
             ) from exc
         return ClaudeSDKRunner(text_only=text_only)
     raise AgentRunError(
-        f"Unknown CONTENTS_HUB_AGENT_RUNNER={name!r}. Supported values: none, claude-sdk."
+        f"Unknown CONTENTS_HUB_AGENT_RUNNER={name!r}. Supported values: none, claude-sdk, aside."
     )
 
 
@@ -50,26 +58,36 @@ def get_default_runner() -> AgentRunner:
 def get_default_text_runner() -> AgentRunner:
     """Return the default runner for text-only synthesis calls.
 
-    Tests that override the process-wide default runner keep working: when
-    ``set_default_runner`` has installed a runner, text synthesis uses that
-    instance. In a fresh CLI process, text synthesis uses a Claude SDK runner
-    without MCP tools or browser plugins.
+    Injected non-browser runners remain usable by text synthesis. Aside uses
+    the deterministic fallback; Claude synthesis omits browser plugins/tools
+    in a fresh CLI process.
     """
     global _DEFAULT_TEXT
-    if _DEFAULT is not None:
+    if _DEFAULT is not None and get_browser_backend(_DEFAULT) != "aside":
         return _DEFAULT
     if _DEFAULT_TEXT is None:
         _DEFAULT_TEXT = _build_runner(text_only=True)
     return _DEFAULT_TEXT
 
 
-def set_default_runner(runner: AgentRunner) -> None:
+def set_default_runner(runner: AgentRunner | None) -> None:
     """Override the default runner (primarily for tests)."""
-    global _DEFAULT
+    global _DEFAULT, _DEFAULT_TEXT
     _DEFAULT = runner
+    _DEFAULT_TEXT = None
+
+
+def get_browser_backend(runner: AgentRunner | None = None) -> str:
+    """Resolve browser ownership for built-in and injected runners."""
+    selected = runner if runner is not None else get_default_runner()
+    return getattr(selected, "browser_backend", "chromux")
 
 
 def __getattr__(name: str) -> Any:
+    if name == "AsideRunner":
+        from contents_hub.runners.aside import AsideRunner
+
+        return AsideRunner
     if name == "ClaudeSDKRunner":
         from contents_hub.runners.claude_sdk import ClaudeSDKRunner
 
@@ -80,9 +98,11 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "AgentRunner",
     "AgentRunError",
+    "AsideRunner",
     "ClaudeSDKRunner",
     "NoAgentRunner",
     "get_default_runner",
+    "get_browser_backend",
     "get_default_text_runner",
     "set_default_runner",
 ]
